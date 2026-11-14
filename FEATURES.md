@@ -36,7 +36,7 @@ MyPDF is a native desktop PDF editor for local documents. Its main workspaces ar
 
 - Highlight, underline, squiggly underline, strikethrough and rectangular area highlighting.
 - Annotation text boxes with font family/style, size and color.
-- Text comments anchored by small page markers: click for an editable popover; open the right panel for the complete conversation, with author names, initials, timestamps, chronological replies, a reply composer, and Resolve/Reopen. An outside click dismisses the popover without placing another note.
+- Text comments anchored by small page markers: click to update an open right panel, or show an editable popover beside the marker when the panel is hidden; open the right panel for the complete conversation, with author names, initials, timestamps, chronological replies, a reply composer, and Resolve/Reopen. An outside click dismisses the popover without placing another note.
 - Suggest replacement wording or an insertion under Annotate → More; replacement is also available on selected text. Suggestions never rewrite the original page text.
 - Voice comments under the same **Comment** menu: record locally, pause/resume, keep or discard, play back, and save audio separately.
 - Voice recordings use the default microphone only after Record and system permission; each recording is limited to three minutes.

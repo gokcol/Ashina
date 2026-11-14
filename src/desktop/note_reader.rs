@@ -4,7 +4,31 @@ use super::*;
 pub(in crate::desktop) struct Popover {
     tab: u64,
     note: String,
-    position: egui::Pos2,
+    fallback: egui::Pos2,
+}
+
+/// Choose a bounded region beside the note; never let viewport clamping cover it.
+fn popover_region(anchor: Rect, viewport: Rect) -> Option<Rect> {
+    let view = viewport.shrink(8.);
+    let gap = 12.;
+    let candidates = [
+        Rect::from_min_max(pos2(anchor.right() + gap, view.top()), view.max),
+        Rect::from_min_max(view.min, pos2(anchor.left() - gap, view.bottom())),
+        Rect::from_min_max(pos2(view.left(), anchor.bottom() + gap), view.max),
+        Rect::from_min_max(view.min, pos2(view.right(), anchor.top() - gap)),
+    ];
+    for area in candidates {
+        if area.width() < 260. || area.height() < 220. {
+            continue;
+        }
+        let size = vec2(area.width().min(324.), area.height().min(400.));
+        let position = pos2(
+            anchor.left().clamp(area.left(), area.right() - size.x),
+            anchor.top().clamp(area.top(), area.bottom() - size.y),
+        );
+        return Some(Rect::from_min_size(position, size));
+    }
+    None
 }
 
 impl Viewer {
@@ -78,17 +102,18 @@ impl Viewer {
             if self.zen.is_some() {
                 self.toggle_zen(ctx);
             }
+            let panel_was_open = self.inspector;
             if self.open_note_reader(tab, &note)
+                && !panel_was_open
                 && self.selected_note().is_some_and(|a| a.voice.is_none())
             {
                 self.inspector = false;
                 self.editor.note_popup = Some(Popover {
                     tab,
                     note,
-                    position: ctx
+                    fallback: ctx
                         .pointer_latest_pos()
-                        .unwrap_or(ctx.content_rect().center())
-                        + vec2(12., 12.),
+                        .unwrap_or(ctx.content_rect().center()),
                 });
             }
         }
@@ -96,6 +121,11 @@ impl Viewer {
     }
 
     fn note_popover(&mut self, ctx: &egui::Context) {
+        // Opening the inspector explicitly transfers this conversation to it.
+        if self.inspector {
+            self.editor.note_popup = None;
+            return;
+        }
         let Some(popover) = &self.editor.note_popup else {
             return;
         };
@@ -107,7 +137,36 @@ impl Viewer {
             self.editor.note_popup = None;
             return;
         };
-        let position = popover.position;
+        let tab = &self.tabs[self.active];
+        let (anchor, viewport) = tab
+            .document_view
+            .zip(tab.document_layout.as_ref())
+            .and_then(|((view, offset, _), layout)| {
+                let page = layout.rects.get(selected.page)?;
+                let origin = page.min + view.min.to_vec2() - offset;
+                let bounds = selected.bounds();
+                Some((
+                    Rect::from_min_max(
+                        origin + vec2(bounds[0], bounds[1]) * layout.scale,
+                        origin + vec2(bounds[2], bounds[3]) * layout.scale,
+                    ),
+                    view.intersect(ctx.content_rect()),
+                ))
+            })
+            .unwrap_or((
+                Rect::from_center_size(popover.fallback, vec2(24., 24.)),
+                ctx.content_rect(),
+            ));
+        if !anchor.intersects(viewport) {
+            self.editor.note_popup = None;
+            return;
+        }
+        let Some(region) = popover_region(anchor, viewport) else {
+            // A large marker or very narrow window has no unobstructed popover space.
+            self.editor.note_popup = None;
+            self.inspector = true;
+            return;
+        };
         let editable = self.tabs[self.active]
             .session
             .as_ref()
@@ -133,72 +192,86 @@ impl Viewer {
         egui::Popup::new(
             id,
             ctx.clone(),
-            egui::Rect::from_min_size(position, vec2(1., 1.)),
+            egui::Rect::from_min_size(region.min, egui::Vec2::ZERO),
             egui::LayerId::background(),
         )
+        .align(egui::RectAlign::BOTTOM_START)
+        .align_alternatives(&[])
+        .frame(egui::Frame::popup(&ctx.style()).inner_margin(12.))
         .open_bool(&mut open)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
-            ui.set_width(300_f32.min(ctx.content_rect().width() - 32.));
+            ui.set_width(region.width() - 24.);
             ui.spacing_mut().item_spacing = vec2(8., 9.);
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new(selected.suggestion.as_ref().map_or("Note", |s| s.label()))
-                        .strong(),
-                );
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    close = ui
-                        .add(ActionButton::new(Icon::Close, "Close note").compact())
-                        .clicked();
-                });
-            });
-            comment_thread::author_header(
-                ui,
-                &selected.object.review.author,
-                selected.object.review.created,
-            );
-            ui.weak(format!("Page {}", selected.page + 1));
-            if let Some(suggestion) = &selected.suggestion {
-                if !suggestion.original.is_empty() {
-                    ui.collapsing("Original wording", |ui| {
-                        ui.label(&suggestion.original);
-                    });
-                }
-                ui.weak("Proposed wording · document text is unchanged");
-            }
-            let text = self.editor.draft.as_mut().unwrap().kind.text_mut().unwrap();
             egui::ScrollArea::vertical()
-                .max_height(180.)
+                .id_salt("note_popover_body")
+                .max_height(region.height() - 24.)
                 .show(ui, |ui| {
-                    let response = ui.add_enabled(
-                        editable,
-                        egui::TextEdit::multiline(text)
-                            .desired_width(f32::INFINITY)
-                            .desired_rows(5)
-                            .char_limit(8000)
-                            .hint_text("Write a note…"),
-                    );
-                    response.widget_info(|| {
-                        egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, editable, "Note text")
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(
+                                selected.suggestion.as_ref().map_or("Note", |s| s.label()),
+                            )
+                            .strong(),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            close = ui
+                                .add(ActionButton::new(Icon::Close, "Close note").compact())
+                                .clicked();
+                        });
                     });
-                    if response.has_focus() {
-                        focus = Some(response.id);
+                    comment_thread::author_header(
+                        ui,
+                        &selected.object.review.author,
+                        selected.object.review.created,
+                    );
+                    ui.weak(format!("Page {}", selected.page + 1));
+                    if let Some(suggestion) = &selected.suggestion {
+                        if !suggestion.original.is_empty() {
+                            ui.collapsing("Original wording", |ui| {
+                                ui.label(&suggestion.original);
+                            });
+                        }
+                        ui.weak("Proposed wording · document text is unchanged");
                     }
+                    let text = self.editor.draft.as_mut().unwrap().kind.text_mut().unwrap();
+                    egui::ScrollArea::vertical()
+                        .max_height(180.)
+                        .show(ui, |ui| {
+                            let response = ui.add_enabled(
+                                editable,
+                                egui::TextEdit::multiline(text)
+                                    .desired_width(f32::INFINITY)
+                                    .desired_rows(5)
+                                    .char_limit(8000)
+                                    .hint_text("Write a note…"),
+                            );
+                            response.widget_info(|| {
+                                egui::WidgetInfo::labeled(
+                                    egui::WidgetType::TextEdit,
+                                    editable,
+                                    "Note text",
+                                )
+                            });
+                            if response.has_focus() {
+                                focus = Some(response.id);
+                            }
+                        });
+                    panel = ui
+                        .add(ActionButton::new(
+                            Icon::Note,
+                            &format!(
+                                "View thread · {}",
+                                comment_thread::reply_count(selected.object.review.replies.len())
+                            ),
+                        ))
+                        .clicked();
+                    ui.weak(if selected.object.review.resolved {
+                        "Resolved"
+                    } else {
+                        "Edits are kept when you close this note."
+                    });
                 });
-            panel = ui
-                .add(ActionButton::new(
-                    Icon::Note,
-                    &format!(
-                        "View thread · {} replies",
-                        selected.object.review.replies.len()
-                    ),
-                ))
-                .clicked();
-            ui.weak(if selected.object.review.resolved {
-                "Resolved"
-            } else {
-                "Edits are kept when you close this note."
-            });
         });
         self.editor.text_editing |= focus.is_some();
         let committed = self.commit_note_draft(
@@ -278,9 +351,9 @@ impl Viewer {
                 });
                 ui.horizontal(|ui| {
                     ui.weak(format!(
-                        "Page {} · {} replies",
+                        "Page {} · {}",
                         selected.page + 1,
-                        selected.object.review.replies.len()
+                        comment_thread::reply_count(selected.object.review.replies.len())
                     ));
                     if selected.object.review.resolved {
                         ui.colored_label(theme::success(), "Resolved");
@@ -484,6 +557,16 @@ mod tests {
                 ..Default::default()
             },
             |ctx| {
+                app.tabs[0].document_view = Some((
+                    Rect::from_min_size(pos2(40., 40.), vec2(500., 500.)),
+                    egui::Vec2::ZERO,
+                    500.,
+                ));
+                app.tabs[0].document_layout = Some(reading::Layout {
+                    rects: vec![Rect::from_min_size(pos2(0., 0.), vec2(500., 500.))],
+                    scale: 1.,
+                    size: vec2(500., 500.),
+                });
                 app.note_reader_requests(ctx);
                 if app.inspector && !app.translation.open && !app.signature_panel_open() {
                     app.annotation_inspector(ctx);
@@ -972,6 +1055,7 @@ mod tests {
         app.open_note_reader(tab, &first.id);
         let output = frame(&mut app, &ctx, vec![]);
         assert!(visible_text(&output, "Draft for first only"));
+        app.inspector = false;
         app.editor.note_requested = Some((tab, first.id.clone()));
         for _ in 0..3 {
             frame(&mut app, &ctx, vec![]);
@@ -984,5 +1068,84 @@ mod tests {
             !app.review.open,
             "individual replies must not require a separate window"
         );
+    }
+    #[test]
+    fn clicking_notes_keeps_an_open_panel_and_switches_its_thread() {
+        let (mut app, ctx, first) = fixture(true);
+        let second = Annotation::new(
+            0,
+            [300., 100., 324., 124.],
+            Kind::Note {
+                text: "Second conversation".into(),
+            },
+            Style::default(),
+        );
+        app.tabs[0]
+            .session
+            .as_mut()
+            .unwrap()
+            .commit(vec![first.clone(), second.clone()])
+            .unwrap();
+        app.editor.mode = Mode::Annotate;
+        app.inspector = true;
+        for _ in 0..3 {
+            frame(&mut app, &ctx, vec![]);
+        }
+        click(&mut app, &ctx, pos2(152., 152.));
+        assert!(app.inspector);
+        assert!(app.editor.note_popup.is_none());
+        assert_eq!(app.tabs[0].selected_annotation.as_ref(), Some(&first.id));
+        click(&mut app, &ctx, pos2(352., 152.));
+        assert!(app.inspector);
+        assert!(app.editor.note_popup.is_none());
+        assert_eq!(app.tabs[0].selected_annotation.as_ref(), Some(&second.id));
+        let output = frame(&mut app, &ctx, vec![]);
+        assert!(visible_text(&output, "Second conversation"));
+    }
+
+    #[test]
+    fn popovers_avoid_notes_at_viewport_edges_and_fall_back_when_space_is_too_small() {
+        let viewport = Rect::from_min_size(pos2(0., 0.), vec2(800., 600.));
+        for position in [
+            pos2(0., 0.),
+            pos2(740., 0.),
+            pos2(0., 540.),
+            pos2(740., 540.),
+            pos2(380., 280.),
+        ] {
+            let anchor = Rect::from_min_size(position, vec2(60., 60.));
+            let region = popover_region(anchor, viewport).expect("room beside marker");
+            assert!(viewport.contains_rect(region));
+            assert!(!anchor.intersects(region));
+        }
+        assert!(popover_region(viewport, viewport).is_none());
+        let (mut app, ctx, mut note) = fixture(true);
+        note.rect = [400., 440., 424., 464.];
+        app.tabs[0]
+            .session
+            .as_mut()
+            .unwrap()
+            .commit(vec![note.clone()])
+            .unwrap();
+        app.inspector = false;
+        app.editor.note_requested = Some((app.tabs[0].id, note.id.clone()));
+        for _ in 0..5 {
+            frame(&mut app, &ctx, vec![]);
+        }
+        let popup_id = egui::Id::new(("note_popover", app.tabs[0].id, &note.id));
+        let popup = ctx.read_response(popup_id).unwrap().rect;
+        let anchor = Rect::from_min_max(pos2(440., 480.), pos2(464., 504.));
+        assert!(
+            !popup.intersects(anchor),
+            "popover {popup:?} must not cover its note {anchor:?}"
+        );
+        assert!(Rect::from_min_max(pos2(40., 40.), pos2(540., 540.)).contains_rect(popup));
+        app.inspector = true;
+        frame(&mut app, &ctx, vec![]);
+        assert!(
+            app.editor.note_popup.is_none(),
+            "opening the panel must remove the floating copy"
+        );
+        assert_eq!(app.tabs[0].selected_annotation.as_ref(), Some(&note.id));
     }
 }

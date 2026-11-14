@@ -2315,6 +2315,7 @@ fn review_tools_preview() {
         &ctx,
         vec![egui::Event::PointerMoved(pos2(300., 300.))],
     );
+    app.inspector = false;
     app.editor.note_requested = Some((app.tabs[0].id, note.id.clone()));
     for _ in 0..5 {
         preview.capture(&mut app, &ctx);

@@ -2,7 +2,7 @@
 
 # MyPDF — native Rust desktop PDF editor
 
-The **3.1.1** source build (Mac build **243**) is in local acceptance testing before publication. See the [complete feature guide](FEATURES.md) for workflows, platform support and compatibility limits. The 3.1 line enters a feature freeze focused on reliability and performance.
+The **3.1.1** source build (Mac build **244**) is in local acceptance testing before publication. See the [complete feature guide](FEATURES.md) for workflows, platform support and compatibility limits. The 3.1 line enters a feature freeze focused on reliability and performance.
 
 Version **3.1.0**, Mac build **235**, adds reliable annotation manipulation, font controls for annotation text, and a visual stamp designer with border templates, colors and transparency. It includes configurable touch controls, customizable Home, polished Settings and About, A4 page sizing, image fitting, OCR, table editing, metadata and saving improvements. [Downloads and full release notes](https://github.com/gokcol/MyPDF/releases/tag/v3.1.0).
 

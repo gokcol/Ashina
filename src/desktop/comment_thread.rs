@@ -189,6 +189,9 @@ pub(super) fn author_header(ui: &mut egui::Ui, author: &str, created: i64) {
         });
     });
 }
+pub(super) fn reply_count(count: usize) -> String {
+    format!("{count} {}", if count == 1 { "reply" } else { "replies" })
+}
 pub(super) fn replies(ui: &mut egui::Ui, note: &Annotation) {
     let replies = &note.object.review.replies;
     if replies.is_empty() {
