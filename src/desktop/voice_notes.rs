@@ -141,6 +141,7 @@ impl Viewer {
             self.editor.draft = Some(selected.clone());
         }
         let clip = selected.voice.clone().unwrap_or_default();
+        let mut thread_action = None;
         let mut close = false;
         let mut delete = false;
         let mut record = false;
@@ -173,133 +174,170 @@ impl Viewer {
                     duration(clip.duration())
                 ));
                 ui.separator();
-                ui.label("Title");
-                let note = self.editor.draft.as_mut().unwrap();
-                let text = note.kind.text_mut().unwrap();
-                let field = ui.add_enabled(
-                    editable,
-                    egui::TextEdit::singleline(text)
-                        .desired_width(f32::INFINITY)
-                        .char_limit(200)
-                        .hint_text("Optional title"),
-                );
-                if field.has_focus() {
-                    focus = Some(field.id);
-                }
-                ui.add_space(8.);
-                if self.editor.voice.pending_permission {
-                    ui.spinner();
-                    ui.label("Waiting for microphone permission…");
-                    discard = ui.button("Cancel").clicked();
-                } else if let Some(recorder) = &self.editor.voice.recorder {
-                    ui.colored_label(
-                        theme::danger(),
-                        format!(
-                            "{}  {} / 3:00",
-                            if recorder.paused() {
-                                "Paused"
-                            } else {
-                                "● Recording"
-                            },
-                            duration(recorder.duration())
-                        ),
-                    );
-                    ui.horizontal(|ui| {
-                        if ui
-                            .button(if recorder.paused() { "Resume" } else { "Pause" })
-                            .clicked()
-                        {
-                            recorder.toggle_pause();
-                        }
-                        stop = ui
-                            .add(ActionButton::new(Icon::Check, "Stop & keep").primary())
-                            .clicked();
-                    });
-                    discard = ui.small_button("Discard recording").clicked();
-                } else {
-                    if !clip.wav.is_empty() {
-                        let elapsed = self
-                            .editor
-                            .voice
-                            .player
-                            .as_ref()
-                            .map_or(0., |p| p.seconds());
-                        ui.add(
-                            egui::ProgressBar::new(elapsed / clip.duration().max(0.01)).text(
-                                format!("{} / {}", duration(elapsed), duration(clip.duration())),
-                            ),
+                let body_height = (ui.available_height() - 158.).max(80.);
+                egui::ScrollArea::vertical()
+                    .id_salt(("voice_thread", tab_id, &selected.id))
+                    .max_height(body_height)
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        comment_thread::author_header(
+                            ui,
+                            &selected.object.review.author,
+                            selected.object.review.created,
                         );
-                        ui.horizontal(|ui| {
-                            if let Some(player) = &self.editor.voice.player {
-                                if ui
-                                    .button(if player.paused.load(Ordering::Relaxed) {
-                                        "Resume playback"
+                        ui.label("Title");
+                        let note = self.editor.draft.as_mut().unwrap();
+                        let text = note.kind.text_mut().unwrap();
+                        let field = ui.add_enabled(
+                            editable,
+                            egui::TextEdit::singleline(text)
+                                .desired_width(f32::INFINITY)
+                                .char_limit(200)
+                                .hint_text("Optional title"),
+                        );
+                        if field.has_focus() {
+                            focus = Some(field.id);
+                        }
+                        ui.add_space(8.);
+                        if self.editor.voice.pending_permission {
+                            ui.spinner();
+                            ui.label("Waiting for microphone permission…");
+                            discard = ui.button("Cancel").clicked();
+                        } else if let Some(recorder) = &self.editor.voice.recorder {
+                            ui.colored_label(
+                                theme::danger(),
+                                format!(
+                                    "{}  {} / 3:00",
+                                    if recorder.paused() {
+                                        "Paused"
                                     } else {
-                                        "Pause playback"
-                                    })
+                                        "● Recording"
+                                    },
+                                    duration(recorder.duration())
+                                ),
+                            );
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .button(if recorder.paused() { "Resume" } else { "Pause" })
                                     .clicked()
                                 {
-                                    player.toggle_pause();
+                                    recorder.toggle_pause();
                                 }
-                                if ui.button("Stop").clicked() {
-                                    self.editor.voice.player = None;
-                                }
-                            } else {
-                                play = ui
-                                    .add(ActionButton::new(Icon::Right, "Play recording").primary())
+                                stop = ui
+                                    .add(ActionButton::new(Icon::Check, "Stop & keep").primary())
                                     .clicked();
+                            });
+                            discard = ui.small_button("Discard recording").clicked();
+                        } else {
+                            if !clip.wav.is_empty() {
+                                let elapsed = self
+                                    .editor
+                                    .voice
+                                    .player
+                                    .as_ref()
+                                    .map_or(0., |p| p.seconds());
+                                ui.add(
+                                    egui::ProgressBar::new(elapsed / clip.duration().max(0.01))
+                                        .text(format!(
+                                            "{} / {}",
+                                            duration(elapsed),
+                                            duration(clip.duration())
+                                        )),
+                                );
+                                ui.horizontal(|ui| {
+                                    if let Some(player) = &self.editor.voice.player {
+                                        if ui
+                                            .button(if player.paused.load(Ordering::Relaxed) {
+                                                "Resume playback"
+                                            } else {
+                                                "Pause playback"
+                                            })
+                                            .clicked()
+                                        {
+                                            player.toggle_pause();
+                                        }
+                                        if ui.button("Stop").clicked() {
+                                            self.editor.voice.player = None;
+                                        }
+                                    } else {
+                                        play = ui
+                                            .add(
+                                                ActionButton::new(Icon::Right, "Play recording")
+                                                    .primary(),
+                                            )
+                                            .clicked();
+                                    }
+                                });
+                                export = ui
+                                    .add(ActionButton::new(Icon::Export, "Save audio…"))
+                                    .clicked();
+                            } else {
+                                ui.weak("Record a comment for this spot on the page.");
                             }
-                        });
-                        export = ui
-                            .add(ActionButton::new(Icon::Export, "Save audio…"))
-                            .clicked();
-                    } else {
-                        ui.weak("Record a comment for this spot on the page.");
-                    }
-                    record = ui
-                        .add_enabled(
-                            editable,
-                            ActionButton::new(
-                                Icon::Microphone,
-                                if clip.wav.is_empty() {
-                                    "Record"
-                                } else {
-                                    "Record again"
-                                },
-                            ),
-                        )
-                        .clicked();
-                    ui.weak("Up to 3 minutes. Recording starts only when you press Record.");
-                }
-                if let Some(error) = &self.editor.voice.error {
-                    ui.colored_label(theme::danger(), error);
-                }
-                ui.separator();
-                if self.editor.voice.pending_clip.is_some() {
-                    ui.horizontal_wrapped(|ui| {
-                        retry = ui.button("Retry attaching").clicked();
-                        save_retained = ui.button("Save retained audio…").clicked();
-                        discard_retained = ui.button("Discard retained audio").clicked();
+                            record = ui
+                                .add_enabled(
+                                    editable,
+                                    ActionButton::new(
+                                        Icon::Microphone,
+                                        if clip.wav.is_empty() {
+                                            "Record"
+                                        } else {
+                                            "Record again"
+                                        },
+                                    ),
+                                )
+                                .clicked();
+                            ui.weak(
+                                "Up to 3 minutes. Recording starts only when you press Record.",
+                            );
+                        }
+                        if let Some(error) = &self.editor.voice.error {
+                            ui.colored_label(theme::danger(), error);
+                        }
+                        ui.separator();
+                        if self.editor.voice.pending_clip.is_some() {
+                            ui.horizontal_wrapped(|ui| {
+                                retry = ui.button("Retry attaching").clicked();
+                                save_retained = ui.button("Save retained audio…").clicked();
+                                discard_retained = ui.button("Discard retained audio").clicked();
+                            });
+                        }
+                        ui.weak(
+                            "Audio stays on this computer. Save the PDF to include the recording.",
+                        );
+                        if editable {
+                            ui.collapsing("Note color", |ui| {
+                                color_palette(ui, &mut note.style.color)
+                            });
+                            delete = ui
+                                .add_enabled(
+                                    self.editor.voice.recorder.is_none()
+                                        && !self.editor.voice.pending_permission,
+                                    ActionButton::new(Icon::Trash, "Delete note"),
+                                )
+                                .clicked();
+                        }
+                        comment_thread::replies(ui, &selected);
                     });
-                }
-                ui.weak("Audio stays on this computer. Save the PDF to include the recording.");
-                if editable {
-                    ui.collapsing("Note color", |ui| color_palette(ui, &mut note.style.color));
-                    delete = ui
-                        .add_enabled(
-                            self.editor.voice.recorder.is_none()
-                                && !self.editor.voice.pending_permission,
-                            ActionButton::new(Icon::Trash, "Delete note"),
-                        )
-                        .clicked();
-                }
+                ui.separator();
+                thread_action = self.editor.comment_thread.composer(
+                    ui,
+                    tab_id,
+                    &selected,
+                    editable
+                        && self.editor.voice.recorder.is_none()
+                        && !self.editor.voice.pending_permission,
+                );
             });
-        self.editor.text_editing |= focus.is_some();
-        self.commit_note_draft(
+        self.editor.text_editing |= focus.is_some() || self.editor.comment_thread.editing;
+        let committed = self.commit_note_draft(
             &selected,
             focus,
             ctx.input(|i| i.pointer.any_down() || i.pointer.any_released()),
         );
+        if committed && let Some(action) = thread_action {
+            self.apply_comment_action(tab_id, &selected.id, action);
+        }
         if discard {
             self.editor.voice.recorder = None;
             self.editor.voice.pending_permission = false;

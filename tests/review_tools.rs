@@ -83,7 +83,6 @@ fn pdf_review_summary_keeps_unicode_long_replies_and_page_previews() {
             .any(|s| s.dict.get(b"Subtype").and_then(|o| o.as_name()).ok() == Some(b"Image"))
     );
     assert!(review_tools::pdf_summary(&saved, &[a], |_, _| false).is_err());
-    std::fs::write("/tmp/mypdf-review-summary-test.pdf", out).unwrap();
 }
 #[test]
 fn cloud_and_suggestion_roundtrip_without_rewriting_page_text() {

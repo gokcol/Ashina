@@ -5,7 +5,7 @@
       "version": "3.1.1",
       "changes": [
         "Voice notes in Comment: record, pause, play and export local audio; WAV recordings stay inside the PDF.",
-        "Notes open in a nearby editable popover, with the panel for longer comments and Review for replies. Callouts remain visible on the page.",
+        "Note threads in the right panel: names, initials, dates, replies and Resolve/Reopen. PDF replies use standard thread links for other readers.",
         "Revision clouds, replacement suggestions and insertion notes keep the original document text unchanged.",
         "PDF review summaries with numbered page previews; CSV export and MyPDF comment exchange with duplicate checks and safe conflict handling.",
         "Export → Prepare for sharing: remove comments, metadata and attachments, or flatten visible pages to exclude hidden content.",

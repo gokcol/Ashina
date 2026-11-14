@@ -15,6 +15,10 @@ Scope: the 3.1.1 editing, review, audio, collection and sharing changes, plus th
 - Shared hover-menu handling supports pointer, keyboard and accessibility activation without reopening immediately after an item is chosen.
 - Note popovers own their dismissal click, preventing click-through annotation creation. Callouts remain independent visible page objects.
 
+- Build 243 shares a single comment timeline/composer between Note, Voice note and Review. Reply drafts are scoped to their document and comment, posting preserves the original author's identity, and thread actions use document Undo.
+- PDF saves use standard Text annotations with IRT/RT links, authors and PDF dates for replies. Supported external replies are reconciled on load; unsupported thread structures and altered parent appearances remain untouched as foreign PDF annotations. Re-saving removes superseded thread objects instead of duplicating them.
+- Removed a macOS-only temporary output path from the review-summary test; visual previews now generate their own report fixture, so the Windows test does not depend on `/tmp`.
+
 ## Validation
 
 Regression coverage includes comment round trips, voice payloads, Unicode and long PDF summaries, conflicting imports, changed document text, cancellation, reused-renderer pixel equivalence, note click-through, failed audio commit/retry, document editing, annotation movement and save/undo behavior. A live three-second Mac microphone recording and playback test completed. Visual previews cover the collection manager, voice/sharing controls, Note popover, revision cloud and PDF report.

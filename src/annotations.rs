@@ -1410,8 +1410,15 @@ pub fn load(doc: &Document) -> Vec<Annotation> {
             .and_then(|o| doc.dereference(o).map(|(_, o)| o))
             .and_then(Object::as_array)
         {
+            let threads = crate::review_pdf::Threads::new(doc, array);
             for value in array {
                 if let Some(mut a) = decoded(doc, value) {
+                    if let Ok(id) = value.as_reference()
+                        && threads.read(id, &mut a.object.review).is_none()
+                    {
+                        continue;
+                    }
+
                     a.page = number as usize - 1;
                     if !seen.insert(a.id.clone()) {
                         a.id = format!("{:032x}", rand::random::<u128>());
@@ -1439,9 +1446,25 @@ fn remove_managed(doc: &mut Document) -> Result<()> {
             .and_then(|o| o.as_array().ok())
             .cloned()
             .unwrap_or_default();
+        let threads = crate::review_pdf::Threads::new(doc, &values);
+        let mut remove = std::collections::HashSet::new();
+        for value in &values {
+            if let Some(mut a) = decoded(doc, value)
+                && let Ok(id) = value.as_reference()
+            {
+                let Some(children) = threads.read(id, &mut a.object.review) else {
+                    continue;
+                };
+                remove.extend(children);
+                remove.insert(id);
+            }
+        }
         let keep: Vec<_> = values
             .into_iter()
-            .filter(|v| decoded(doc, v).is_none())
+            .filter(|v| match v {
+                Object::Reference(id) => !remove.contains(id),
+                _ => decoded(doc, v).is_none(),
+            })
             .collect();
         if !keep.is_empty() {
             doc.get_dictionary_mut(page)?
@@ -2865,6 +2888,17 @@ pub fn export(bytes: &[u8], annotations: &[Annotation]) -> Result<Vec<u8>> {
         ensure!(a.page < geometry.len(), "Annotation page is missing");
     }
     remove_managed(&mut doc)?;
+    if annotations
+        .iter()
+        .any(|a| !a.object.review.replies.is_empty() || a.object.review.resolved)
+        && doc
+            .version
+            .split_once('.')
+            .and_then(|(major, minor)| Some((major.parse::<u8>().ok()?, minor.parse::<u8>().ok()?)))
+            .is_some_and(|version| version < (1, 5))
+    {
+        doc.version = "1.5".into();
+    }
     let text: String = annotations
         .iter()
         .filter(|a| {
@@ -2993,12 +3027,9 @@ pub fn export(bytes: &[u8], annotations: &[Annotation]) -> Result<Vec<u8>> {
         if !a.object.review.author.is_empty() {
             d.set("T", text_string(&a.object.review.author));
         }
-        if !a.object.review.replies.is_empty() {
-            let mut text = a.kind.text().unwrap_or(a.kind.label()).to_owned();
-            for reply in &a.object.review.replies {
-                text.push_str(&format!("\n\n{}: {}", reply.author, reply.text));
-            }
-            d.set("Contents", text_string(&text));
+        d.set("MyPDFThreadVersion", 1);
+        if let Some(date) = crate::review_pdf::pdf_date(a.object.review.created) {
+            d.set("CreationDate", date);
         }
         let point = |p: Point2| {
             let p = a.rotated(p);
@@ -3241,6 +3272,13 @@ pub fn export(bytes: &[u8], annotations: &[Annotation]) -> Result<Vec<u8>> {
             .cloned()
             .unwrap_or_default();
         list.push(Object::Reference(id));
+        list.extend(crate::review_pdf::append(
+            &mut doc,
+            page_id,
+            id,
+            pdf_numbers(rect),
+            a,
+        ));
         doc.get_dictionary_mut(page_id)?
             .set("Annots", Object::Array(list));
     }

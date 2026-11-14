@@ -124,7 +124,6 @@ impl Viewer {
         }
         let mut close = false;
         let mut panel = false;
-        let mut review = false;
         let mut focus = None;
         let mut open = true;
         // Popup owns outside clicks. Also block page interaction for its closing
@@ -153,16 +152,12 @@ impl Viewer {
                         .clicked();
                 });
             });
-            let author = &selected.object.review.author;
-            ui.weak(format!(
-                "Page {}{}",
-                selected.page + 1,
-                if author.is_empty() {
-                    String::new()
-                } else {
-                    format!(" · {author}")
-                }
-            ));
+            comment_thread::author_header(
+                ui,
+                &selected.object.review.author,
+                selected.object.review.created,
+            );
+            ui.weak(format!("Page {}", selected.page + 1));
             if let Some(suggestion) = &selected.suggestion {
                 if !suggestion.original.is_empty() {
                     ui.collapsing("Original wording", |ui| {
@@ -190,12 +185,15 @@ impl Viewer {
                         focus = Some(response.id);
                     }
                 });
-            ui.horizontal(|ui| {
-                panel = ui
-                    .add(ActionButton::new(Icon::Note, "Open in panel"))
-                    .clicked();
-                review = ui.add(ActionButton::new(Icon::Note, "Replies")).clicked();
-            });
+            panel = ui
+                .add(ActionButton::new(
+                    Icon::Note,
+                    &format!(
+                        "View thread · {} replies",
+                        selected.object.review.replies.len()
+                    ),
+                ))
+                .clicked();
             ui.weak(if selected.object.review.resolved {
                 "Resolved"
             } else {
@@ -208,13 +206,10 @@ impl Viewer {
             focus,
             ctx.input(|i| i.pointer.any_down() || i.pointer.any_released()),
         );
-        if committed && (close || !open || panel || review) {
+        if committed && (close || !open || panel) {
             self.editor.note_popup = None;
             if panel {
                 self.inspector = true;
-            } else if review {
-                self.review.open = true;
-                self.review.selected = Some(selected.id);
             } else {
                 selection::set(&mut self.tabs[self.active], &mut self.editor, vec![]);
             }
@@ -260,6 +255,7 @@ impl Viewer {
         let mut focus = None;
         let mut close = false;
         let mut delete = false;
+        let mut thread_action = None;
         egui::SidePanel::right("annotation_inspector")
             .default_width(300.)
             .width_range(250.0..=440.0)
@@ -280,54 +276,58 @@ impl Viewer {
                             .clicked();
                     });
                 });
-                let author = selected.object.review.author.trim();
-                let metadata = if author.is_empty() {
-                    format!("Page {}", selected.page + 1)
-                } else {
-                    format!("Page {} · {author}", selected.page + 1)
-                };
-                ui.label(RichText::new(metadata).small().color(theme::muted()));
-                ui.separator();
-                if let Some(suggestion) = &selected.suggestion {
-                    if !suggestion.original.is_empty() {
-                        ui.collapsing("Original wording", |ui| {
-                            ui.label(&suggestion.original);
-                        });
+                ui.horizontal(|ui| {
+                    ui.weak(format!(
+                        "Page {} · {} replies",
+                        selected.page + 1,
+                        selected.object.review.replies.len()
+                    ));
+                    if selected.object.review.resolved {
+                        ui.colored_label(theme::success(), "Resolved");
                     }
-                    ui.weak("Suggested wording only. The document text stays unchanged.");
-                }
-                let note = self.editor.draft.as_mut().unwrap();
-                let Kind::Note { text } = &mut note.kind else {
-                    return;
-                };
-                let field_id = egui::Id::new((tab_id, &selected.id, "note_text"));
-                // Keep actions visible while long translations scroll inside the body.
-                let body_height = (ui.available_height() - 140.).max(80.);
+                });
+                ui.separator();
+                // Keep the composer visible; the original note and its replies share one scroll area.
+                let body_height = (ui.available_height() - 158.).max(80.);
                 egui::ScrollArea::vertical()
                     .id_salt((tab_id, &selected.id, "note_body"))
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
                     .auto_shrink([false, false])
                     .max_height(body_height)
                     .show(ui, |ui| {
-                        let width = ui.available_width().max(40.);
+                        comment_thread::author_header(
+                            ui,
+                            &selected.object.review.author,
+                            selected.object.review.created,
+                        );
+                        if let Some(suggestion) = &selected.suggestion {
+                            if !suggestion.original.is_empty() {
+                                ui.collapsing("Original wording", |ui| {
+                                    ui.label(&suggestion.original);
+                                });
+                            }
+                            ui.weak("Proposed wording · document text is unchanged");
+                        }
+                        let note = self.editor.draft.as_mut().unwrap();
+                        let text = note.kind.text_mut().unwrap();
+                        let field_id = egui::Id::new((tab_id, &selected.id, "note_text"));
                         let response = if editable {
-                            ui.add_sized(
-                                [width, body_height],
+                            ui.add(
                                 egui::TextEdit::multiline(text)
                                     .id(field_id)
-                                    .desired_width(width)
-                                    .font(egui::TextStyle::Body)
+                                    .desired_width(f32::INFINITY)
+                                    .desired_rows(3)
                                     .margin(ui::FIELD_MARGIN)
                                     .hint_text("Write a note…")
-                                    .char_limit(8_000),
+                                    .char_limit(8000),
                             )
                         } else {
                             let mut value = text.as_str();
-                            ui.add_sized(
-                                [width, body_height],
+                            ui.add(
                                 egui::TextEdit::multiline(&mut value)
                                     .id(field_id)
-                                    .desired_width(width)
-                                    .font(egui::TextStyle::Body)
+                                    .desired_width(f32::INFINITY)
+                                    .desired_rows(3)
                                     .margin(ui::FIELD_MARGIN),
                             )
                         };
@@ -337,35 +337,39 @@ impl Viewer {
                         if response.has_focus() {
                             focus = Some(field_id);
                         }
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add(ActionButton::new(Icon::Copy, "Copy note").compact())
+                                .clicked()
+                            {
+                                ctx.copy_text(text.clone());
+                            }
+                            delete = ui
+                                .add_enabled(
+                                    editable,
+                                    ActionButton::new(Icon::Trash, "Delete note").compact(),
+                                )
+                                .clicked();
+                            if editable {
+                                ui.collapsing("Note color", |ui| {
+                                    color_palette(ui, &mut note.style.color);
+                                });
+                            }
+                        });
+                        comment_thread::replies(ui, &selected);
                     });
-                ui.horizontal(|ui| {
-                    if ui.add(ActionButton::new(Icon::Copy, "Copy note")).clicked() {
-                        ctx.copy_text(text.clone());
-                    }
-                    delete = ui
-                        .add_enabled(
-                            editable,
-                            ActionButton::new(Icon::Trash, "Delete note").compact(),
-                        )
-                        .on_hover_text("Delete note")
-                        .clicked();
-                });
+                ui.separator();
+                thread_action = self
+                    .editor
+                    .comment_thread
+                    .composer(ui, tab_id, &selected, editable);
                 ui.label(
-                    RichText::new(if editable {
-                        "Edits update immediately. Save the PDF to keep them."
-                    } else {
-                        "Read-only note · Select or copy the text."
-                    })
-                    .small()
-                    .color(theme::muted()),
+                    RichText::new("Save the PDF to keep this conversation.")
+                        .small()
+                        .color(theme::muted()),
                 );
-                if editable {
-                    ui.collapsing("Note color", |ui| {
-                        color_palette(ui, &mut note.style.color);
-                    });
-                }
             });
-        self.editor.text_editing |= focus.is_some();
+        self.editor.text_editing |= focus.is_some() || self.editor.comment_thread.editing;
         let committed = self.commit_note_draft(
             &selected,
             focus,
@@ -373,6 +377,9 @@ impl Viewer {
         );
         if !ctx.input(|i| i.pointer.any_down()) && focus.is_none() {
             self.editor.property_edit = None;
+        }
+        if committed && let Some(action) = thread_action {
+            self.apply_comment_action(tab_id, &selected.id, action);
         }
         if delete {
             self.editor_delete();
@@ -829,6 +836,153 @@ mod tests {
         assert_eq!(
             app.tabs[0].session.as_ref().unwrap().annotations[0].voice,
             Some(clip)
+        );
+    }
+    fn control(output: &egui::FullOutput, label: &str) -> egui::Pos2 {
+        let bounds = output
+            .platform_output
+            .accesskit_update
+            .as_ref()
+            .unwrap()
+            .nodes
+            .iter()
+            .find_map(|(_, node)| {
+                (node.label() == Some(label))
+                    .then(|| node.bounds())
+                    .flatten()
+            })
+            .unwrap_or_else(|| panic!("Missing control {label}"));
+        pos2(
+            ((bounds.x0 + bounds.x1) / 2.) as f32,
+            ((bounds.y0 + bounds.y1) / 2.) as f32,
+        )
+    }
+
+    #[test]
+    fn thread_composer_posts_to_its_note_and_preserves_author_through_undo_save() {
+        let (mut app, ctx, mut note) = fixture(true);
+        *note.kind.text_mut().unwrap() = "Original wording".into();
+        note.object.review.author = "Original author".into();
+        note.object.review.created = 1794655800;
+        app.tabs[0]
+            .session
+            .as_mut()
+            .unwrap()
+            .commit(vec![note.clone()])
+            .unwrap();
+        let tab = app.tabs[0].id;
+        app.editor.comment_thread.author = "Ayşe Yılmaz".into();
+        assert!(app.open_note_reader(tab, &note.id));
+        for _ in 0..3 {
+            frame(&mut app, &ctx, vec![]);
+        }
+        let output = frame(&mut app, &ctx, vec![]);
+        click(&mut app, &ctx, control(&output, "Write a reply"));
+        frame(
+            &mut app,
+            &ctx,
+            vec![egui::Event::Text("Checked; correct value is 125.".into())],
+        );
+        let output = frame(&mut app, &ctx, vec![]);
+        click(&mut app, &ctx, control(&output, "Post reply"));
+        let posted = app.tabs[0].session.as_ref().unwrap().annotations[0].clone();
+        assert_eq!(posted.object.review.author, "Original author");
+        assert_eq!(posted.object.review.replies.len(), 1);
+        assert_eq!(posted.object.review.replies[0].author, "Ayşe Yılmaz");
+        assert_eq!(
+            posted.object.review.replies[0].text,
+            "Checked; correct value is 125."
+        );
+        assert_eq!(app.editor.draft.as_ref().unwrap(), &posted);
+        let output = frame(&mut app, &ctx, vec![]);
+        assert!(visible_text(&output, "Ayşe Yılmaz"));
+        app.editor_undo(false);
+        frame(&mut app, &ctx, vec![]);
+        assert!(
+            app.tabs[0].session.as_ref().unwrap().annotations[0]
+                .object
+                .review
+                .replies
+                .is_empty()
+        );
+        app.editor_undo(true);
+        frame(&mut app, &ctx, vec![]);
+        let source = convert::blank(500., 500.).unwrap();
+        let saved =
+            annotations::export(&source, &app.tabs[0].session.as_ref().unwrap().annotations)
+                .unwrap();
+        assert_eq!(
+            annotations::load(&lopdf::Document::load_mem(&saved).unwrap()),
+            vec![posted.clone()]
+        );
+        let output = frame(&mut app, &ctx, vec![]);
+        click(&mut app, &ctx, control(&output, "Resolve"));
+        assert!(
+            app.tabs[0].session.as_ref().unwrap().annotations[0]
+                .object
+                .review
+                .resolved
+        );
+        let output = frame(&mut app, &ctx, vec![]);
+        click(&mut app, &ctx, control(&output, "Reopen"));
+        assert!(
+            !app.tabs[0].session.as_ref().unwrap().annotations[0]
+                .object
+                .review
+                .resolved
+        );
+        app.tabs[0].session.as_mut().unwrap().editable = false;
+        assert!(!app.apply_comment_action(tab, &note.id, comment_thread::Action::Resolve(true)));
+        assert_eq!(app.tabs[0].session.as_ref().unwrap().annotations[0], posted);
+    }
+
+    #[test]
+    fn reply_drafts_stay_with_their_note_and_popover_opens_inline_thread() {
+        let (mut app, ctx, mut first) = fixture(true);
+        *first.kind.text_mut().unwrap() = "First comment".into();
+        let second = Annotation::new(
+            0,
+            [200., 100., 224., 124.],
+            Kind::Note {
+                text: "Second comment".into(),
+            },
+            Style::default(),
+        );
+        app.tabs[0]
+            .session
+            .as_mut()
+            .unwrap()
+            .commit(vec![first.clone(), second.clone()])
+            .unwrap();
+        let tab = app.tabs[0].id;
+        app.open_note_reader(tab, &first.id);
+        for _ in 0..3 {
+            frame(&mut app, &ctx, vec![]);
+        }
+        let output = frame(&mut app, &ctx, vec![]);
+        click(&mut app, &ctx, control(&output, "Write a reply"));
+        frame(
+            &mut app,
+            &ctx,
+            vec![egui::Event::Text("Draft for first only".into())],
+        );
+        app.open_note_reader(tab, &second.id);
+        let output = frame(&mut app, &ctx, vec![]);
+        assert!(!visible_text(&output, "Draft for first only"));
+        app.open_note_reader(tab, &first.id);
+        let output = frame(&mut app, &ctx, vec![]);
+        assert!(visible_text(&output, "Draft for first only"));
+        app.editor.note_requested = Some((tab, first.id.clone()));
+        for _ in 0..3 {
+            frame(&mut app, &ctx, vec![]);
+        }
+        let output = frame(&mut app, &ctx, vec![]);
+        click(&mut app, &ctx, control(&output, "View thread · 0 replies"));
+        assert!(app.inspector);
+        assert!(app.editor.note_popup.is_none());
+        assert!(
+            !app.review.open,
+            "individual replies must not require a separate window"
         );
     }
 }

@@ -36,7 +36,7 @@ MyPDF is a native desktop PDF editor for local documents. Its main workspaces ar
 
 - Highlight, underline, squiggly underline, strikethrough and rectangular area highlighting.
 - Annotation text boxes with font family/style, size and color.
-- Text comments anchored by small page markers: click for an editable popover; open the right panel for longer notes or Review for replies. An outside click dismisses the popover without placing another note.
+- Text comments anchored by small page markers: click for an editable popover; open the right panel for the complete conversation, with author names, initials, timestamps, chronological replies, a reply composer, and Resolve/Reopen. An outside click dismisses the popover without placing another note.
 - Suggest replacement wording or an insertion under Annotate → More; replacement is also available on selected text. Suggestions never rewrite the original page text.
 - Voice comments under the same **Comment** menu: record locally, pause/resume, keep or discard, play back, and save audio separately.
 - Voice recordings use the default microphone only after Record and system permission; each recording is limited to three minutes.
@@ -44,6 +44,7 @@ MyPDF is a native desktop PDF editor for local documents. Its main workspaces ar
 - Callouts with visible text boxes and leaders pointing to page details.
 - Review replies, author information, open/resolved status and author/status/color filtering.
 - Export CSV summaries or searchable PDF summaries with numbered comments beside page previews, including long replies on continuation pages.
+- Saved PDFs include standard reply annotations with author names, dates and thread links for other PDF readers. MyPDF reloads supported reply changes on its own unchanged parent comments; unsupported or externally altered parent annotations are preserved as foreign PDF objects.
 - Export/import MyPDF review files (`.mypdf-review`) from Review actions. Includes native comments, drawings, stamps, voice recordings and replies; validates the base document, skips duplicates, and keeps conflicts as separate comments after a preview. Import is undoable. This is a MyPDF exchange format, not Acrobat XFDF/FDF.
 - Move annotations by dragging inside them; resize and rotate using selection controls.
 - Undo/Redo for supported annotation changes, including replacement recordings.

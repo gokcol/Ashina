@@ -597,6 +597,7 @@ pub(super) struct EditorState {
     pub voice_note: bool,
     pub suggestion: Option<mypdf_milestone0::review::SuggestionKind>,
     pub voice: super::voice_audio::State,
+    pub(super) comment_thread: super::comment_thread::State,
     pub signature_open: bool,
     signature_placement: Option<SignaturePlacement>,
     pub(super) signature_manage_only: bool,
@@ -717,6 +718,7 @@ impl EditorState {
             std::env::temp_dir().join(format!("mypdf-headless-{:016x}", rand::random::<u64>()));
         let placement_sizes = placement_sizes::State::load(root.clone());
         let collections = asset_collections::State::load(root.clone());
+        let comment_thread = super::comment_thread::State::load(root.clone());
         let (library, library_error) = match Library::open(root) {
             Ok(l) => (Some(l), None),
             Err(e) => (None, Some(format!("{e:#}"))),
@@ -724,6 +726,7 @@ impl EditorState {
         let (import_tx, import_rx) = mpsc::channel();
         let (signature_tx, signature_rx) = mpsc::channel();
         Self {
+            comment_thread,
             hide_guides: false,
             background: None,
             svg: SvgEditor::default(),
@@ -2673,6 +2676,11 @@ fn commit_new(
             kind: mypdf_milestone0::review::SuggestionKind::Replace,
             original: original.chars().take(8000).collect(),
         });
+    }
+    a.object.review.author = editor.comment_thread.author.trim().into();
+    a.object.review.created = mypdf_milestone0::review::timestamp();
+    if let Some(mark) = &mut companion {
+        mark.object.review = a.object.review.clone();
     }
     if let Some(s) = &mut tab.session {
         let mut entries = s.annotations.clone();

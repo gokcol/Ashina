@@ -2277,7 +2277,22 @@ fn review_tools_preview() {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     use mypdf_milestone0::annotations::{Annotation, Kind, Shape, Style};
-    let note=Annotation::new(0,[75.,130.,99.,154.],Kind::Note{text:"Could we clarify this section before approval?\n\nPlease keep the original document wording for now.".into()},Style::default());
+    let mut note=Annotation::new(0,[75.,130.,99.,154.],Kind::Note{text:"Could we clarify this section before approval?\n\nPlease keep the original document wording for now.".into()},Style::default());
+    note.object.review.author = "Orhan Gökçöl".into();
+    note.object.review.created = 1794655800;
+    note.object.review.replies = vec![
+        mypdf_milestone0::review::Reply {
+            author: "Ayşe Yılmaz".into(),
+            created: 1794656520,
+            text: "Checked; the correct value is 125. I have also reviewed the references.".into(),
+        },
+        mypdf_milestone0::review::Reply {
+            author: "Orhan Gökçöl".into(),
+            created: 1794656700,
+            text: "Thanks, updated. Ready for the next review.".into(),
+        },
+    ];
+    app.editor.comment_thread.author = "Orhan Gökçöl".into();
     let cloud = Annotation::new(
         0,
         [110., 110., 350., 220.],
@@ -2300,13 +2315,45 @@ fn review_tools_preview() {
         &ctx,
         vec![egui::Event::PointerMoved(pos2(300., 300.))],
     );
-    app.editor.note_requested = Some((app.tabs[0].id, note.id));
+    app.editor.note_requested = Some((app.tabs[0].id, note.id.clone()));
     for _ in 0..5 {
         preview.capture(&mut app, &ctx);
     }
     let output = preview.capture(&mut app, &ctx);
     preview.save(&ctx, output, &root.join("note-popover.png"));
-    let bytes = std::fs::read("/tmp/mypdf-review-summary-test.pdf").unwrap();
+    app.open_note_reader(app.tabs[0].id, &note.id);
+    for (name, theme, size) in [
+        (
+            "note-thread-light",
+            egui::ThemePreference::Light,
+            vec2(1100., 800.),
+        ),
+        (
+            "note-thread-dark",
+            egui::ThemePreference::Dark,
+            vec2(1100., 800.),
+        ),
+        (
+            "note-thread-compact",
+            egui::ThemePreference::Light,
+            vec2(900., 620.),
+        ),
+    ] {
+        ctx.set_theme(theme);
+        preview.size = Some(size);
+        for _ in 0..5 {
+            preview.capture(&mut app, &ctx);
+        }
+        let output = preview.capture(&mut app, &ctx);
+        preview.save(&ctx, output, &root.join(format!("{name}.png")));
+    }
+    let session = app.tabs[0].session.as_ref().unwrap();
+    let bytes = mypdf_milestone0::review_tools::pdf_summary(
+        &session.source,
+        &session.annotations,
+        |_, _| true,
+    )
+    .unwrap();
     let (size, pixels) = mypdf_milestone0::viewer::render_page(&bytes, 0, 1.4).unwrap();
     image::RgbaImage::from_raw(size[0] as u32, size[1] as u32, pixels)
         .unwrap()

@@ -4,6 +4,7 @@ mod annotation_render;
 mod annotation_text;
 mod asset_collections;
 mod clipboard;
+mod comment_thread;
 mod comparison;
 mod content;
 mod details;
