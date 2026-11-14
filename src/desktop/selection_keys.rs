@@ -18,7 +18,7 @@ impl Viewer {
             || self.accessible_text
             || self.comparison.is_some()
             || ctx.memory(|memory| memory.top_modal_layer().is_some())
-            || self.productivity.owns_input()
+            || self.workflow_owns_input()
             || self.organizer.busy
             || self.redaction.active
             || self.workbench_owns_shortcuts()
@@ -33,6 +33,9 @@ impl Viewer {
             || !matches!(self.editor.mode, Mode::Edit | Mode::Annotate | Mode::Draw)
         {
             return;
+        }
+        if let Some(tab) = self.tabs.get_mut(self.active) {
+            selection::normalize(tab, &mut self.editor);
         }
         let Some(tab) = self.tabs.get(self.active) else {
             return;
@@ -234,9 +237,44 @@ mod tests {
     }
 
     #[test]
+    fn switching_to_edit_prevents_annotation_nudge_or_delete_before_next_frame() {
+        for kind in [
+            Kind::Rectangle,
+            Kind::Text {
+                text: "Annotation text".into(),
+            },
+            Kind::Note {
+                text: "Comment".into(),
+            },
+        ] {
+            let (mut app, ctx, mark) = fixture(kind);
+            app.editor.mode = Mode::Edit;
+            for pressed in [
+                egui::Key::ArrowRight,
+                egui::Key::Delete,
+                egui::Key::Backspace,
+            ] {
+                key(&mut app, &ctx, pressed, egui::Modifiers::NONE);
+                assert_eq!(selected(&app), &mark);
+                assert_eq!(app.tabs[0].session.as_ref().unwrap().revision(), 0);
+                assert!(app.tabs[0].selected_annotation.is_none());
+            }
+        }
+    }
+
+    #[test]
     fn edit_and_annotate_keys_nudge_in_page_points_preserve_modes_and_undo() {
         for mode in [Mode::Edit, Mode::Annotate, Mode::Draw] {
-            let (mut app, ctx, mark) = fixture(Kind::Rectangle);
+            let kind = if mode == Mode::Edit {
+                Kind::Image {
+                    png: std::sync::Arc::new(
+                        crate::desktop::clipboard::png(1, 1, &[0, 0, 0, 255]).unwrap(),
+                    ),
+                }
+            } else {
+                Kind::Rectangle
+            };
+            let (mut app, ctx, mark) = fixture(kind);
             app.editor.mode = mode;
             key(&mut app, &ctx, egui::Key::ArrowRight, egui::Modifiers::NONE);
             assert_eq!(selected(&app).rect, [51., 70., 121., 100.]);

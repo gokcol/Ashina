@@ -152,6 +152,7 @@ fn items(target: &Target, editable: bool) -> Vec<Item> {
             item("Copy selected text", "copy_text", true),
             item("Translate selected text…", "translate_selection", true),
             item("Note on selection…", "selection_note", editable),
+            item("Suggest replacement…", "selection_replace", editable),
             item("Highlight", "highlight", editable),
             item("Underline", "underline", editable),
             item("Squiggly underline", "squiggly", editable),
@@ -780,11 +781,9 @@ pub(super) fn candidates(state: &ContentState, tab: &Tab, page: usize) -> Vec<In
             }
         }
     }
-    for a in s
-        .annotations
-        .iter()
-        .filter(|a| a.page == page && !a.object.hidden && !a.object.locked)
-    {
+    for a in s.annotations.iter().filter(|a| {
+        a.page == page && !a.object.hidden && !a.object.locked && a.object.text.is_some()
+    }) {
         if let Kind::Text { .. } = &a.kind {
             drafts.push(annotation_candidate(a, key));
         }
@@ -815,7 +814,7 @@ fn target_at(
         selection::set(tab, editor, vec![]);
         return Target::SelectedText(selected);
     }
-    if let Some(a) = editing::hit_annotation(tab, page, p, scale) {
+    if let Some(a) = editing::hit_annotation(tab, page, p, scale, editor.mode) {
         if !selection::selected_ids(tab).contains(&a.id) {
             selection::set(tab, editor, vec![a.id]);
         }
@@ -840,7 +839,7 @@ fn target_at(
     }
     if editor.mode == editing::Mode::Edit {
         let texts = candidates(state, tab, page);
-        if let Some(d) = texts.iter().rev().find(|d| contains(d.rect, p)) {
+        if let Some(d) = texts.iter().rev().find(|d| contains(d.bounds(), p)) {
             return Target::Text(Box::new(line_at(d.clone(), &texts, tab.pages[page])));
         }
         if let Some(info) = state
@@ -872,7 +871,9 @@ pub(in crate::desktop) fn smart_select(
     scale: f32,
     inspector: &mut bool,
 ) {
-    if state.busy
+    if editor.note_popup.is_some()
+        || editor.note_pointer_blocked
+        || state.busy
         || state.add_target.is_some()
         || state.region.active
         || state.area_mode
@@ -948,22 +949,20 @@ pub(in crate::desktop) fn smart_select(
     }
     if let Some(draft) = &state.existing {
         let active = Rect::from_min_max(
-            rect.min + vec2(draft.rect[0], draft.rect[1]) * scale,
-            rect.min + vec2(draft.rect[2], draft.rect[3]) * scale,
+            rect.min + vec2(draft.bounds()[0], draft.bounds()[1]) * scale,
+            rect.min + vec2(draft.bounds()[2], draft.bounds()[3]) * scale,
         );
         // An outside click finishes this editor only. Selecting the next
         // object is a separate click, after the revision has been refreshed.
         if clicked
             && draft.key.0 == tab.id
-            && !(draft.key.2 == page
-                && (active.expand(8.).contains(pos)
-                    || text_move_handle(active, rect).expand(6.).contains(pos)))
+            && !(draft.key.2 == page && active.expand(8.).contains(pos))
         {
             state.new_commit = true;
         }
         return;
     }
-    if let Some(a) = editing::hit_annotation(tab, page, point, scale) {
+    if let Some(a) = editing::hit_annotation(tab, page, point, scale, editor.mode) {
         // A note is a comment, not an empty drawing or underlying PDF text.
         // Keep the pointer press for page gestures, and open its body on click.
         if matches!(a.kind, Kind::Note { .. }) && !ui.input(|i| i.modifiers.shift) {
@@ -1017,7 +1016,7 @@ pub(in crate::desktop) fn smart_select(
     }
     if let Some(info) = state.inspection.as_ref().filter(|i| i.key == key) {
         let texts = candidates(state, tab, page);
-        if let Some(d) = texts.iter().rev().find(|d| contains(d.rect, point)) {
+        if let Some(d) = texts.iter().rev().find(|d| contains(d.bounds(), point)) {
             if clicked && session.editable {
                 let draft = line_at(d.clone(), &texts, tab.pages[page]);
                 state.context.command = Some((
@@ -1092,7 +1091,7 @@ pub(in crate::desktop) fn page_menu(
         let in_editor = state
             .existing
             .as_ref()
-            .is_some_and(|d| d.key == key && contains(d.rect, [p.x, p.y]))
+            .is_some_and(|d| d.key == key && contains(d.bounds(), [p.x, p.y]))
             || (state.new_placed
                 && state.add_target == Some((tab.id, page))
                 && contains(
@@ -1747,14 +1746,39 @@ impl Viewer {
                     self.open_selection_bookmark(text, menu.key);
                 }
             }
-            "selection_note" => {
+            "selection_note" | "selection_replace" => {
                 if let Target::SelectedText(selection) = &menu.target
-                    && let Some(mark) =
+                    && let Some(mut mark) =
                         selection_note(selection, &self.tabs[index], &self.editor.style)
                 {
+                    let mut strikeouts = vec![];
+                    if action == "selection_replace" {
+                        mark.suggestion = Some(mypdf_milestone0::review::Suggestion {
+                            kind: mypdf_milestone0::review::SuggestionKind::Replace,
+                            original: selection
+                                .text(&self.tabs[index])
+                                .unwrap_or_default()
+                                .chars()
+                                .take(8000)
+                                .collect(),
+                        });
+                        *mark.kind.text_mut().unwrap() = String::new();
+                        for rect in selection.rects(&self.tabs[index]) {
+                            strikeouts.push(Annotation::new(
+                                selection.page,
+                                rect,
+                                Kind::Markup {
+                                    kind: mypdf_milestone0::annotations::Markup::Strikeout,
+                                    quads: vec![[0., 0., 1., 1.]],
+                                },
+                                self.editor.style.clone(),
+                            ));
+                        }
+                    }
                     let tab = &mut self.tabs[index];
                     let session = tab.session.as_mut().unwrap();
                     let mut entries = session.annotations.clone();
+                    entries.extend(strikeouts);
                     entries.push(mark.clone());
                     match session.commit(entries) {
                         Ok(()) => {
@@ -1937,12 +1961,22 @@ impl Viewer {
                 }
             }
             "edit_text_here" => {
+                if let Target::Artwork(marks) = &menu.target
+                    && let Some(a) = marks.first().filter(|a| a.object.text.is_none())
+                {
+                    self.editor.mode = editing::Mode::Annotate;
+                    selection::set(&mut self.tabs[index], &mut self.editor, vec![a.id.clone()]);
+                    annotation_text::start(&mut self.editor, self.tabs[index].id, a, false);
+                    self.inspector = true;
+                    return;
+                }
+
                 let draft = match &menu.target {
                     Target::Text(d) => Some((**d).clone()),
                     Target::Artwork(m) => {
                         let texts = candidates(&self.content, &self.tabs[index], menu.key.2);
                         texts.into_iter().find(
-                            |d| matches!(&d.target,InlineTarget::Annotation(id) if id==&m[0].id),
+                            |d| matches!(&d.target, InlineTarget::Block(b) if b.selection.annotations.iter().any(|(id, _)| id == &m[0].id)),
                         )
                     }
                     _ => None,
@@ -2730,6 +2764,7 @@ mod tests {
     #[test]
     fn shortcuts_in_a_context_menu_act_on_its_target_and_close_it() {
         let (mut app, ctx) = fixture();
+        app.editor.mode = editing::Mode::Annotate;
         let a = Annotation::new(0, [20., 20., 80., 80.], Kind::Rectangle, Default::default());
         let b = Annotation::new(
             0,
@@ -2884,7 +2919,7 @@ mod tests {
         frame(app, ctx, vec![]);
     }
     #[test]
-    fn empty_text_box_handle_menu_can_delete_placeholder() {
+    fn empty_text_box_body_menu_can_delete_placeholder() {
         let (mut app, ctx) = fixture();
         let tab = &app.tabs[0];
         app.content.place_text(tab.id, 0, [50., 60.], tab.pages[0]);
@@ -2904,14 +2939,8 @@ mod tests {
             pos2(20. + app.content.new_rect[0], 20. + app.content.new_rect[1]),
             vec2(app.content.new_rect[2], app.content.new_rect[3]),
         );
-        let handle = text_move_handle(r, Rect::from_min_size(pos2(20., 20.), vec2(500., 500.)));
-        click(
-            &mut app,
-            &ctx,
-            handle.center(),
-            egui::PointerButton::Secondary,
-        );
-        menu_click(&mut app, &ctx, "Delete");
+        click(&mut app, &ctx, r.center(), egui::PointerButton::Secondary);
+        menu_click(&mut app, &ctx, "Delete text box");
         assert!(!app.content.new_placed);
         assert!(app.content.add_target.is_none());
         assert_eq!(app.tabs[0].session.as_ref().unwrap().revision(), 0);
@@ -2987,8 +3016,15 @@ mod tests {
             Target::Artwork(vec![mark.clone()]),
             "edit_text_here",
         );
-        assert!(app.content.existing.is_some());
-        run_command(&mut app, &ctx, Target::PendingText, "delete_text_box");
+        assert!(app.content.existing.is_none());
+        assert!(app.editor.mode == editing::Mode::Annotate);
+        assert!(app.editor.annotation_text.is_some());
+        run_command(
+            &mut app,
+            &ctx,
+            Target::Artwork(vec![mark.clone()]),
+            "object_delete",
+        );
         let session = app.tabs[0].session.as_mut().unwrap();
         assert!(session.annotations.is_empty());
         session.undo();
@@ -3041,6 +3077,7 @@ mod tests {
             ("Arrange", "Lock"),
         ] {
             let (mut app, ctx) = fixture();
+            app.editor.mode = editing::Mode::Annotate;
             let mut first = Annotation::new(
                 0,
                 [100., 100., 180., 180.],
@@ -3246,6 +3283,7 @@ mod tests {
     fn drawing_menu_stays_compact_and_transform_submenu_remains_actionable() {
         for dark in [false, true] {
             let (mut app, ctx) = fixture();
+            app.editor.mode = editing::Mode::Annotate;
             ctx.set_theme(if dark {
                 egui::ThemePreference::Dark
             } else {
@@ -3302,7 +3340,7 @@ mod tests {
     }
     #[test]
     fn target_follows_right_click_and_only_offers_relevant_actions_in_edit_mode() {
-        let (mut app, ctx) = fixture();
+        let (mut app, _ctx) = fixture();
         let image = Annotation::new(
             0,
             [10., 10., 60., 60.],
@@ -3350,8 +3388,10 @@ mod tests {
             [100., 130.],
             1.,
         );
-        assert!(commands(&target, true).contains(&"flip_horizontal"));
-        assert!(!commands(&target, true).contains(&"crop_object"));
+        assert!(
+            matches!(target, Target::Page),
+            "Edit ignores annotation drawings"
+        );
         let target = target_at(
             &app.content,
             &mut app.editor,
@@ -3360,14 +3400,11 @@ mod tests {
             [210., 60.],
             1.,
         );
-        assert!(commands(&target, true).contains(&"edit_text_here"));
-        assert!(!commands(&target, true).contains(&"flip_horizontal"));
-        run_command(&mut app, &ctx, target, "edit_text_here");
-        assert_eq!(
-            app.content.existing.as_ref().unwrap().text,
-            "Selected words"
+        assert!(
+            matches!(target, Target::Page),
+            "Edit ignores annotation text"
         );
-        app.content.existing = None;
+        assert!(app.content.existing.is_none());
         let target = target_at(
             &app.content,
             &mut app.editor,
@@ -3382,8 +3419,9 @@ mod tests {
         assert!(selection::selected_ids(&app.tabs[0]).is_empty());
     }
     #[test]
-    fn edit_mode_secondary_click_opens_drawing_menu_and_executes_on_clicked_object() {
+    fn annotate_secondary_click_opens_drawing_menu_and_executes_on_clicked_object() {
         let (mut app, ctx) = fixture();
+        app.editor.mode = editing::Mode::Annotate;
         let shape = Annotation::new(
             0,
             [100., 100., 180., 180.],
@@ -3423,6 +3461,7 @@ mod tests {
     #[test]
     fn reset_rotation_keeps_drawings_and_preserves_text_geometry_with_undo() {
         let (mut app, ctx) = fixture();
+        app.editor.mode = editing::Mode::Annotate;
         let mut text = Annotation::new(
             0,
             [50., 50., 180., 100.],
@@ -4126,7 +4165,9 @@ mod tests {
         let mark = Annotation::new(
             0,
             [300., 200., 400., 300.],
-            Kind::Rectangle,
+            Kind::Image {
+                png: Arc::new(clipboard::png(1, 1, &[0, 0, 0, 255]).unwrap()),
+            },
             mypdf_milestone0::annotations::Style {
                 fill: Some([0.9, 0.95, 1.]),
                 ..Default::default()
@@ -4477,7 +4518,9 @@ mod tests {
         let shape = Annotation::new(
             0,
             [80., 80., 180., 180.],
-            Kind::Rectangle,
+            Kind::Image {
+                png: Arc::new(clipboard::png(1, 1, &[0, 0, 0, 255]).unwrap()),
+            },
             Default::default(),
         );
         let id = shape.id.clone();
@@ -4552,6 +4595,7 @@ mod tests {
     #[test]
     fn contextual_group_format_and_select_behind_commands_use_clicked_objects() {
         let (mut app, ctx) = fixture();
+        app.editor.mode = editing::Mode::Annotate;
         let a = Annotation::new(
             0,
             [200., 200., 300., 300.],

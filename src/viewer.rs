@@ -988,33 +988,48 @@ pub fn raster_key(page: usize, size: PageSize, desired: f32, thumbnail: bool) ->
     }
 }
 
+/// A parsed document reused by sequential exports. Raster buffers and render
+/// caches stay local to each page, bounding memory for large documents.
+pub struct PageRenderer {
+    pdf: Pdf,
+}
+impl PageRenderer {
+    pub fn new(bytes: &[u8]) -> Result<Self> {
+        let rendering = lopdf::Document::load_mem(bytes)
+            .map(|mut doc| image_render_copy(bytes, &mut doc))
+            .unwrap_or_else(|_| bytes.to_vec());
+        Ok(Self {
+            pdf: open_render_pdf(rendering, bytes)?,
+        })
+    }
+    pub fn render(&self, page: usize, scale: f32) -> Result<([usize; 2], Vec<u8>)> {
+        anyhow::ensure!(scale.is_finite() && scale > 0., "Invalid page render scale");
+        let page = self.pdf.pages().get(page).context("Page not found")?;
+        let (width, height) = page.render_dimensions();
+        let scale = scale
+            .min((MAX_RASTER_PIXELS / (width * height)).sqrt())
+            .min(8192.0 / width.max(height))
+            .max(0.001);
+        let raster = hayro::render(
+            page,
+            &hayro::RenderCache::new(),
+            &crate::render_fonts::settings(),
+            &hayro::RenderSettings::default(),
+            &hayro::PixmapSettings {
+                x_scale: scale,
+                y_scale: scale,
+                bg_color: hayro::vello_cpu::color::palette::css::WHITE,
+            },
+        );
+        Ok((
+            [raster.width() as usize, raster.height() as usize],
+            raster.data_as_u8_slice().to_vec(),
+        ))
+    }
+}
 /// Render one displayed page to premultiplied RGBA, outside any worker.
 pub fn render_page(bytes: &[u8], page: usize, scale: f32) -> Result<([usize; 2], Vec<u8>)> {
-    let rendering = lopdf::Document::load_mem(bytes)
-        .map(|mut doc| image_render_copy(bytes, &mut doc))
-        .unwrap_or_else(|_| bytes.to_vec());
-    let pdf = open_render_pdf(rendering, bytes)?;
-    let page = pdf.pages().get(page).context("Page not found")?;
-    let (width, height) = page.render_dimensions();
-    let scale = scale
-        .min((MAX_RASTER_PIXELS / (width * height)).sqrt())
-        .min(8192.0 / width.max(height))
-        .max(0.001);
-    let raster = hayro::render(
-        page,
-        &hayro::RenderCache::new(),
-        &crate::render_fonts::settings(),
-        &hayro::RenderSettings::default(),
-        &hayro::PixmapSettings {
-            x_scale: scale,
-            y_scale: scale,
-            bg_color: hayro::vello_cpu::color::palette::css::WHITE,
-        },
-    );
-    Ok((
-        [raster.width() as usize, raster.height() as usize],
-        raster.data_as_u8_slice().to_vec(),
-    ))
+    PageRenderer::new(bytes)?.render(page, scale)
 }
 
 fn image_render_copy(bytes: &[u8], doc: &mut lopdf::Document) -> Vec<u8> {

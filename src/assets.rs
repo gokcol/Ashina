@@ -207,7 +207,11 @@ impl Asset {
 
 /// Built-in vector artwork is available without changing the user's local library.
 /// Stable IDs keep previews and placement independent of catalogue writes.
+#[path = "assets/extras.rs"]
+mod extras;
+
 pub struct BuiltinAsset {
+    pub default_visible: bool,
     pub category: &'static str,
     pub asset: Asset,
 }
@@ -232,7 +236,11 @@ pub fn builtin_assets() -> Vec<BuiltinAsset> {
             aspect,
         );
         asset.id = format!("b27a{:028x}", out.len());
-        out.push(BuiltinAsset { category, asset });
+        out.push(BuiltinAsset {
+            category,
+            asset,
+            default_visible: true,
+        });
     };
     let arrow = vec![
         [0.06, 0.34],
@@ -489,6 +497,7 @@ pub fn builtin_assets() -> Vec<BuiltinAsset> {
         );
         asset.id = format!("b27a{:028x}", out.len());
         out.push(BuiltinAsset {
+            default_visible: true,
             category: "Stamps",
             asset,
         });
@@ -536,6 +545,7 @@ pub fn builtin_assets() -> Vec<BuiltinAsset> {
         asset.id = format!("b27a{:028x}", out.len());
         asset.stamp = true;
         out.push(BuiltinAsset {
+            default_visible: true,
             category: "Stamps",
             asset,
         });
@@ -573,6 +583,7 @@ pub fn builtin_assets() -> Vec<BuiltinAsset> {
         asset.id = format!("b27a{:028x}", out.len());
         asset.stamp = true;
         out.push(BuiltinAsset {
+            default_visible: true,
             category: "Stamps",
             asset,
         });
@@ -647,8 +658,13 @@ pub fn builtin_assets() -> Vec<BuiltinAsset> {
             width / 100.,
         );
         asset.id = format!("b27a{:028x}", out.len());
-        out.push(BuiltinAsset { category, asset });
+        out.push(BuiltinAsset {
+            category,
+            asset,
+            default_visible: true,
+        });
     }
+    extras::append(&mut out);
     out
 }
 fn stamp_width(text: &str) -> f32 {

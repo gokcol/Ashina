@@ -9,6 +9,8 @@ mod drawing_properties;
 mod note_reader;
 #[path = "placement_sizes.rs"]
 mod placement_sizes;
+#[path = "voice_notes.rs"]
+mod voice_notes;
 use mypdf_milestone0::{
     annotations::{
         self as ann, Annotation, Box2, Kind, Markup, Primitive, StrokeStyle, Style, Symbol,
@@ -47,6 +49,7 @@ pub(super) enum Tool {
     Triangle,
     Pentagon,
     Hexagon,
+    Cloud,
     Ellipse,
     Circle,
     Semicircle,
@@ -89,6 +92,7 @@ impl Tool {
             Self::Triangle => "Triangle",
             Self::Pentagon => "Pentagon",
             Self::Hexagon => "Hexagon",
+            Self::Cloud => "Revision cloud",
             Self::Ellipse => "Ellipse",
             Self::Circle => "Circle",
             Self::Semicircle => "Semicircle",
@@ -134,6 +138,7 @@ impl Tool {
                 | Self::Triangle
                 | Self::Pentagon
                 | Self::Hexagon
+                | Self::Cloud
         )
     }
     fn is_ellipse(self) -> bool {
@@ -146,6 +151,7 @@ impl Tool {
             Self::Triangle => ann::Shape::Triangle,
             Self::Pentagon => ann::Shape::Pentagon,
             Self::Hexagon => ann::Shape::Hexagon,
+            Self::Cloud => ann::Shape::Cloud,
             Self::Circle => ann::Shape::Circle,
             Self::Semicircle => ann::Shape::Semicircle,
             _ => return None,
@@ -213,6 +219,7 @@ impl Tool {
             Self::Triangle => Icon::Triangle,
             Self::Pentagon => Icon::Pentagon,
             Self::Hexagon => Icon::Hexagon,
+            Self::Cloud => Icon::Cloud,
             Self::Ellipse => Icon::Ellipse,
             Self::Circle => Icon::Circle,
             Self::Semicircle => Icon::Semicircle,
@@ -238,6 +245,7 @@ impl Tool {
 
 #[derive(Clone, Copy)]
 enum ToolFamily {
+    Selection,
     Rectangle,
     Ellipse,
     Line,
@@ -251,6 +259,7 @@ enum ToolGroupAction {
 impl ToolFamily {
     fn id(self) -> &'static str {
         match self {
+            Self::Selection => "selection_variants",
             Self::Rectangle => "rectangle_variants",
             Self::Ellipse => "ellipse_variants",
             Self::Line => "line_variants",
@@ -259,6 +268,7 @@ impl ToolFamily {
     }
     fn choices(self) -> &'static [ToolChoice] {
         match self {
+            Self::Selection => &[(Tool::Select, None), (Tool::Lasso, None)],
             Self::Rectangle => &[
                 (Tool::Rectangle, None),
                 (Tool::Square, None),
@@ -266,6 +276,7 @@ impl ToolFamily {
                 (Tool::Triangle, None),
                 (Tool::Pentagon, None),
                 (Tool::Hexagon, None),
+                (Tool::Cloud, None),
             ],
             Self::Ellipse => &[
                 (Tool::Ellipse, None),
@@ -302,6 +313,7 @@ fn hover_tool_group(
     current: ToolChoice,
     selected: bool,
     blocked: &mut bool,
+    ink: Color32,
 ) -> Option<ToolGroupAction> {
     let label = |(tool, stroke): ToolChoice| {
         stroke.map_or_else(|| tool.label(), |style| tool.line_label(style))
@@ -309,11 +321,15 @@ fn hover_tool_group(
     let icon = |(tool, stroke): ToolChoice| {
         stroke.map_or_else(|| tool.icon(), |style| tool.line_icon(style))
     };
-    let response = ui.add(
-        ActionButton::new(icon(current), label(current))
-            .compact()
-            .selected(selected),
-    );
+    let button = |choice| {
+        let button = ActionButton::new(icon(choice), label(choice));
+        if matches!(family, ToolFamily::Selection) {
+            button
+        } else {
+            button.drawing_ink(ink)
+        }
+    };
+    let response = ui.add(button(current).compact().selected(selected));
     let id = response.id.with(family.id());
     if !response.hovered() {
         *blocked = false;
@@ -352,8 +368,10 @@ fn hover_tool_group(
                     ui.separator();
                 }
                 if ui
-                    .add(ActionButton::new(icon(choice), label(choice)).selected(
-                        choice.0 == current.0 && (choice.1.is_none() || choice.1 == current.1),
+                    .add(button(choice).selected(
+                        selected
+                            && choice.0 == current.0
+                            && (choice.1.is_none() || choice.1 == current.1),
                     ))
                     .clicked()
                 {
@@ -562,6 +580,8 @@ pub(super) struct EditorState {
     pub text_editing: bool,
     pub(super) snapping: bool,
     pub(super) eraser: pen_tools::State,
+    selection_tool: Tool,
+    selection_hover_blocked: bool,
     arrow_tool: Tool,
     arrow_hover_blocked: bool,
     line_tool: Tool,
@@ -574,6 +594,9 @@ pub(super) struct EditorState {
     ellipse_hover_blocked: bool,
     callout_text_color: [f32; 3],
     pub library_open: bool,
+    pub voice_note: bool,
+    pub suggestion: Option<mypdf_milestone0::review::SuggestionKind>,
+    pub voice: super::voice_audio::State,
     pub signature_open: bool,
     signature_placement: Option<SignaturePlacement>,
     pub(super) signature_manage_only: bool,
@@ -588,6 +611,8 @@ pub(super) struct EditorState {
     // Document, annotation, last committed revision, and focused property field.
     pub(super) property_edit: Option<(u64, String, u64, Option<egui::Id>)>,
     pub(super) note_requested: Option<(u64, String)>,
+    pub(super) note_popup: Option<note_reader::Popover>,
+    pub(super) note_pointer_blocked: bool,
     pub(super) marquee: Option<selection::Marquee>,
     pub(super) group_gesture: Option<selection::GroupGesture>,
     pub(super) text_selection: Option<text_selection::TextSelection>,
@@ -597,6 +622,9 @@ pub(super) struct EditorState {
     /// The asset most recently added to the library, for "use as my signature".
     pub(super) last_added: Option<String>,
     gesture: Option<Gesture>,
+    // A completed drawing yields its next body press to selection. Explicitly
+    // choosing a tool clears this so users can deliberately draw over objects.
+    grab_after_draw: Option<(u64, usize)>,
     vertices: Option<VertexPath>,
     pressed: Option<(u64, usize, [f32; 2])>,
     touch_navigation: bool,
@@ -610,6 +638,7 @@ pub(super) struct EditorState {
     stamp_source: usize,
     library_folder: String,
     pub(super) builtins: Vec<assets::BuiltinAsset>,
+    pub(super) collections: asset_collections::State,
     signature_name: String,
     signature_typed: String,
     signature_name_style: usize,
@@ -687,6 +716,7 @@ impl EditorState {
         let root =
             std::env::temp_dir().join(format!("mypdf-headless-{:016x}", rand::random::<u64>()));
         let placement_sizes = placement_sizes::State::load(root.clone());
+        let collections = asset_collections::State::load(root.clone());
         let (library, library_error) = match Library::open(root) {
             Ok(l) => (Some(l), None),
             Err(e) => (None, Some(format!("{e:#}"))),
@@ -703,6 +733,8 @@ impl EditorState {
             text_editing: false,
             snapping: true,
             eraser: pen_tools::State::default(),
+            selection_tool: Tool::Select,
+            selection_hover_blocked: false,
             arrow_tool: Tool::Arrow,
             arrow_hover_blocked: false,
             line_tool: Tool::Line,
@@ -715,6 +747,9 @@ impl EditorState {
             ellipse_hover_blocked: false,
             callout_text_color: [0.15, 0.17, 0.21],
             library_open: false,
+            voice_note: false,
+            suggestion: None,
+            voice: super::voice_audio::State::default(),
             signature_open: false,
             signature_placement: None,
             signature_manage_only: false,
@@ -728,6 +763,8 @@ impl EditorState {
             annotation_text: None,
             property_edit: None,
             note_requested: None,
+            note_popup: None,
+            note_pointer_blocked: false,
             marquee: None,
             group_gesture: None,
             text_selection: None,
@@ -735,6 +772,7 @@ impl EditorState {
             group_edit: None,
             last_added: None,
             gesture: None,
+            grab_after_draw: None,
             vertices: None,
             pressed: None,
             touch_navigation: false,
@@ -748,6 +786,7 @@ impl EditorState {
             stamp_source: 0,
             library_folder: String::new(),
             builtins: assets::builtin_assets(),
+            collections,
             signature_name: "My handwritten signature".into(),
             signature_typed: String::new(),
             signature_name_style: 0,
@@ -815,6 +854,12 @@ impl EditorState {
         Ok(())
     }
     pub(super) fn select_tool(&mut self, tool: Tool) {
+        self.suggestion = None;
+        self.note_popup = None;
+        self.grab_after_draw = None;
+        if matches!(tool, Tool::Select | Tool::Lasso) {
+            self.selection_tool = tool;
+        }
         self.eraser.finish();
         // A reclick and rearm keeps this tool's custom heads. A different
         // geometry starts with its own inferred ends, including arrowheads.
@@ -984,7 +1029,12 @@ impl EditorState {
             Tool::Note => {
                 style.fill = Some([1.0, 0.82, 0.23]);
                 Kind::Note {
-                    text: "New note".into(),
+                    text: if self.voice_note {
+                        "Voice note"
+                    } else {
+                        "New note"
+                    }
+                    .into(),
                 }
             }
             Tool::Callout => {
@@ -1042,6 +1092,18 @@ impl EditorState {
             _ => Kind::Rectangle,
         };
         let mut a = Annotation::new(page, r, kind, style);
+        if self.tool == Tool::Note
+            && self.suggestion == Some(mypdf_milestone0::review::SuggestionKind::Insert)
+        {
+            a.suggestion = Some(mypdf_milestone0::review::Suggestion {
+                kind: mypdf_milestone0::review::SuggestionKind::Insert,
+                original: String::new(),
+            });
+            *a.kind.text_mut().unwrap() = String::new();
+        }
+        if self.tool == Tool::Note && self.voice_note {
+            a.voice = Some(mypdf_milestone0::voice::Clip::default());
+        }
         if self.tool == Tool::Asset {
             a.asset_id = self.placed.as_ref().map(|a| a.id.clone());
             a.object.stamp = self.placed.as_ref().is_some_and(|a| a.stamp);
@@ -1053,9 +1115,8 @@ impl EditorState {
 const HIGHLIGHT: [f32; 3] = [1.0, 0.8, 0.05];
 const DEFAULT_INK: [f32; 3] = [0.11, 0.43, 0.35];
 
-const ANNOTATION_TOOLS: [Tool; 7] = [
+const ANNOTATION_TOOLS: [Tool; 6] = [
     Tool::Select,
-    Tool::Lasso,
     Tool::Highlight,
     Tool::Pen,
     Tool::Text,
@@ -1115,7 +1176,7 @@ fn annotation_ribbon_layout(ui: &egui::Ui, available: f32) -> (AnnotationLabels,
             + more
             + stamps
             + 3. * 6.
-            + 11. * gap
+            + 10. * gap
             + if touch_tools::controls_available(ui.ctx()) {
                 touch + 6. + 2. * gap
             } else {
@@ -1514,6 +1575,20 @@ pub(super) fn page_interaction(
     scale: f32,
     status: &mut Option<(String, bool)>,
 ) {
+    page_object_interaction(editor, tab, ui, page, page_rect, scale, status, false);
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn page_object_interaction(
+    editor: &mut EditorState,
+    tab: &mut Tab,
+    ui: &mut egui::Ui,
+    page: usize,
+    page_rect: Rect,
+    scale: f32,
+    status: &mut Option<(String, bool)>,
+    edit_artwork: bool,
+) {
     let ctx = ui.ctx();
     annotation_text::sync(editor, tab);
     let editable = tab.session.as_ref().is_some_and(|s| s.editable);
@@ -1558,7 +1633,11 @@ pub(super) fn page_interaction(
         );
         return;
     }
-    if matches!(editor.mode, Mode::Edit | Mode::Forms | Mode::Convert) {
+    if editor.note_pointer_blocked
+        || editor.note_popup.is_some()
+        || matches!(editor.mode, Mode::Forms | Mode::Convert)
+        || (editor.mode == Mode::Edit && !edit_artwork)
+    {
         let painter = ui
             .painter()
             .with_clip_rect(page_rect.intersect(ui.clip_rect()));
@@ -1571,6 +1650,40 @@ pub(super) fn page_interaction(
         }
         return;
     }
+    // Existing drawings and selection handles own the next press, even while
+    // a creation tool remains armed. Decide before dispatching pen/vertex tools;
+    // an unfinished polygon, lasso or eraser keeps its own gesture semantics.
+    if editable
+        && matches!(editor.mode, Mode::Draw | Mode::Annotate | Mode::Edit)
+        && !egui::Popup::is_any_open(ctx)
+        && ctx.input(|i| i.pointer.primary_pressed())
+        && let Some(pos) = ctx
+            .input(|i| {
+                i.events.iter().find_map(|event| match event {
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        ..
+                    } => Some(*pos),
+                    _ => None,
+                })
+            })
+            .or_else(|| ctx.pointer_interact_pos())
+            .filter(|p| ui.clip_rect().contains(*p) && ctx.layer_id_at(*p) == Some(ui.layer_id()))
+        && let p = (pos - page_rect.min) / scale
+        && (selected_handle(editor, tab, page, [p.x, p.y], scale).is_some()
+            || (editor.mode == Mode::Draw
+                && editor.grab_after_draw == Some((tab.id, page))
+                && editor.vertices.is_none()
+                && editor.gesture.is_none()
+                && !matches!(editor.tool, Tool::Eraser | Tool::Lasso)
+                && page_rect.contains(pos)
+                && hit_annotation(tab, page, [p.x, p.y], scale, editor.mode).is_some()))
+    {
+        editor.tool = Tool::Select;
+        editor.library_open = false;
+    }
     let mut response = ui.interact(
         page_rect,
         egui::Id::new((tab.id, page, "page_actions")),
@@ -1580,7 +1693,7 @@ pub(super) fn page_interaction(
     // onto the canvas. Give those handles their own hit areas; the rest of the
     // surrounding canvas must remain available for navigation and deselection.
     if editable
-        && matches!(editor.mode, Mode::Draw | Mode::Annotate)
+        && matches!(editor.mode, Mode::Draw | Mode::Annotate | Mode::Edit)
         && editor.tool == Tool::Select
         && !editor.hide_guides
         && let Some(a) = tab.session.as_ref().and_then(|s| {
@@ -1594,7 +1707,9 @@ pub(super) fn page_interaction(
     {
         let b = a.bounds();
         let mut handles = vec![[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]];
-        handles.extend(manipulation::rotation_handle(a, scale));
+        if a.object.text.is_none() {
+            handles.extend(manipulation::rotation_handle(a, scale));
+        }
         if let Some(points) = manipulation::endpoints(a) {
             handles.extend(points);
         }
@@ -1699,9 +1814,9 @@ pub(super) fn page_interaction(
         && editable
         && !(editor.vertices.is_none()
             && response.clicked()
-            && response
-                .interact_pointer_pos()
-                .is_some_and(|p| hit_annotation(tab, page, normal(p), scale).is_some()));
+            && response.interact_pointer_pos().is_some_and(|p| {
+                hit_annotation(tab, page, normal(p), scale, editor.mode).is_some()
+            }));
     if vertex_tool {
         let finish_click = response.double_clicked()
             && editor.vertices.as_ref().is_some_and(|v| {
@@ -1865,12 +1980,17 @@ pub(super) fn page_interaction(
         && !inline_text_pointer
         && !vertex_tool
         && !extending_text_selection
-        && matches!(editor.mode, Mode::Read | Mode::Draw | Mode::Annotate)
+        && matches!(
+            editor.mode,
+            Mode::Read | Mode::Draw | Mode::Annotate | Mode::Edit
+        )
         && let Some(pointer) = response.interact_pointer_pos()
     {
         let p = normal(pointer);
         let shift = ctx.input(|i| i.modifiers.shift);
-        if let Some(a) = hit_annotation(tab, page, p, scale) {
+        if let Some(a) = selected_handle(editor, tab, page, p, scale)
+            .or_else(|| hit_annotation(tab, page, p, scale, editor.mode))
+        {
             if shift && matches!(editor.mode, Mode::Annotate | Mode::Draw) {
                 selection::toggle(tab, editor, &a);
             } else {
@@ -1935,26 +2055,8 @@ pub(super) fn page_interaction(
         )
     {
         let original = if editor.tool == Tool::Select {
-            // The resize handle belongs to the rotated bounding box, which can lie outside the mark itself.
-            tab.selected_annotation
-                .as_ref()
-                .and_then(|id| {
-                    tab.session
-                        .as_ref()?
-                        .annotations
-                        .iter()
-                        .find(|a| {
-                            &a.id == id
-                                && a.page == page
-                                && !a.object.hidden
-                                && !editor.hide_guides
-                                && (corner_at(a, p, scale).is_some()
-                                    || manipulation::endpoint_at(a, p, scale).is_some()
-                                    || manipulation::rotation_at(a, p, scale))
-                        })
-                        .cloned()
-                })
-                .or_else(|| hit_annotation(tab, page, p, scale))
+            selected_handle(editor, tab, page, p, scale)
+                .or_else(|| hit_annotation(tab, page, p, scale, editor.mode))
         } else {
             None
         };
@@ -1962,14 +2064,14 @@ pub(super) fn page_interaction(
             .as_ref()
             .filter(|_| !editor.hide_guides)
             .and_then(|a| manipulation::endpoint_at(a, p, scale));
-        let rotating = original
-            .as_ref()
-            .is_some_and(|a| !editor.hide_guides && manipulation::rotation_at(a, p, scale));
+        let rotating = original.as_ref().is_some_and(|a| {
+            a.object.text.is_none() && !editor.hide_guides && manipulation::rotation_at(a, p, scale)
+        });
         let resize = original
             .as_ref()
             .filter(|a| Some(&a.id) == tab.selected_annotation.as_ref() && !editor.hide_guides)
             .and_then(|a| corner_at(a, p, scale));
-        if (matches!(editor.mode, Mode::Annotate | Mode::Draw)
+        if (matches!(editor.mode, Mode::Annotate | Mode::Draw | Mode::Edit)
             && editable
             && (editor.tool != Tool::Select || original.is_some())
             && original.as_ref().is_none_or(|a| !a.object.locked))
@@ -2076,10 +2178,14 @@ pub(super) fn page_interaction(
                             std::slice::from_ref(&original.id),
                             scale,
                         );
-                        if artwork {
-                            next.rect = moved_image_rect(next.rect, d, page_size);
-                        } else {
-                            next = selection::moved(&[next], d, page_size).remove(0);
+                        // Keep the grabbed object under the pointer. Guides are
+                        // advisory during the drag; alignment applies on release.
+                        if response.drag_stopped() || quick_release {
+                            if artwork {
+                                next.rect = moved_image_rect(next.rect, d, page_size);
+                            } else {
+                                next = selection::moved(&[next], d, page_size).remove(0);
+                            }
                         }
                         gesture.guides = guides;
                     }
@@ -2242,6 +2348,7 @@ pub(super) fn page_interaction(
             }
         }
         if !a.object.locked
+            && a.object.text.is_none()
             && let Some(h) = manipulation::rotation_handle(a, scale)
         {
             let b = a.bounds();
@@ -2302,9 +2409,13 @@ pub(super) fn page_interaction(
         }
     }
     // Grab to move, grabbing while moving, diagonal arrows on the corners.
-    if matches!(editor.mode, Mode::Annotate | Mode::Draw)
+    if matches!(editor.mode, Mode::Annotate | Mode::Draw | Mode::Edit)
         && editable
-        && matches!(editor.tool, Tool::Select | Tool::Lasso)
+        && (matches!(editor.tool, Tool::Select | Tool::Lasso)
+            || (editor.mode == Mode::Draw
+                && editor.grab_after_draw == Some((tab.id, page))
+                && editor.vertices.is_none()
+                && editor.tool != Tool::Eraser))
         && editor.group_gesture.is_none()
         && tab.group.len() < 2
     {
@@ -2327,7 +2438,7 @@ pub(super) fn page_interaction(
             (None, Some(_)) => Some(egui::CursorIcon::Grabbing),
             (None, None) => response
                 .hover_pos()
-                .and_then(|pos| hit_annotation(tab, page, normal(pos), scale))
+                .and_then(|pos| hit_annotation(tab, page, normal(pos), scale, editor.mode))
                 .filter(|a| !a.object.locked)
                 .map(|_| egui::CursorIcon::Grab),
         };
@@ -2510,11 +2621,68 @@ fn commit_new(
     explicitly_sized: bool,
     status: &mut Option<(String, bool)>,
 ) {
+    let mut a = a;
+    let mut companion = None;
+    if editor.suggestion == Some(mypdf_milestone0::review::SuggestionKind::Replace)
+        && matches!(
+            a.kind,
+            Kind::Markup {
+                kind: Markup::Strikeout,
+                ..
+            }
+        )
+    {
+        let original = tab
+            .text
+            .get(a.page)
+            .and_then(Option::as_ref)
+            .map(|text| {
+                text.glyphs
+                    .iter()
+                    .filter(|g| {
+                        g.rect[0] < a.rect[2]
+                            && g.rect[2] > a.rect[0]
+                            && g.rect[1] < a.rect[3]
+                            && g.rect[3] > a.rect[1]
+                    })
+                    .filter_map(|g| text.text.get(g.range.clone()))
+                    .collect::<String>()
+            })
+            .unwrap_or_default();
+        if original.trim().is_empty() {
+            *status = Some((
+                "Drag across existing page text to suggest a replacement.".into(),
+                true,
+            ));
+            return;
+        }
+        companion = Some(a.clone());
+        let page = tab.pages[a.page];
+        let x = (a.rect[0] - 21.).max(0.);
+        let y = a.rect[1].min((page.height - 18.).max(0.));
+        a = Annotation::new(
+            a.page,
+            [x, y, x + 18., y + 18.],
+            Kind::Note {
+                text: String::new(),
+            },
+            editor.style.clone(),
+        );
+        a.style.fill = Some([1., 0.82, 0.23]);
+        a.suggestion = Some(mypdf_milestone0::review::Suggestion {
+            kind: mypdf_milestone0::review::SuggestionKind::Replace,
+            original: original.chars().take(8000).collect(),
+        });
+    }
     if let Some(s) = &mut tab.session {
         let mut entries = s.annotations.clone();
+        entries.extend(companion);
         entries.push(a.clone());
         match s.commit(entries) {
             Ok(()) => {
+                if editor.mode == Mode::Draw {
+                    editor.grab_after_draw = Some((tab.id, a.page));
+                }
                 if explicitly_sized && editor.tool == Tool::Asset {
                     editor.remember_asset_size(&a);
                 }
@@ -2556,19 +2724,60 @@ fn commit_new(
         }
     }
 }
-pub(super) fn hit_annotation(
+/// Edit-created text layers belong to document editing, even though their PDF
+/// appearance is kept in the artwork stack so text stays above inserted images.
+pub(super) fn selectable_in_mode(a: &Annotation, mode: Mode) -> bool {
+    if mode == Mode::Edit {
+        a.object.text.is_some()
+            || a.object.table.is_some()
+            || (!a.object.stamp
+                && a.asset_id.is_none()
+                && matches!(a.kind, Kind::Image { .. } | Kind::Svg { .. }))
+    } else {
+        a.object.text.is_none()
+    }
+}
+
+fn selected_handle(
+    editor: &EditorState,
     tab: &Tab,
     page: usize,
     point: [f32; 2],
     scale: f32,
 ) -> Option<Annotation> {
+    if editor.hide_guides {
+        return None;
+    }
+    tab.session
+        .as_ref()?
+        .annotations
+        .iter()
+        .find(|a| {
+            Some(&a.id) == tab.selected_annotation.as_ref()
+                && a.page == page
+                && !a.object.hidden
+                && !a.object.locked
+                && selectable_in_mode(a, editor.mode)
+                && (corner_at(a, point, scale).is_some()
+                    || manipulation::endpoint_at(a, point, scale).is_some()
+                    || (a.object.text.is_none() && manipulation::rotation_at(a, point, scale)))
+        })
+        .cloned()
+}
+
+pub(super) fn hit_annotation(
+    tab: &Tab,
+    page: usize,
+    point: [f32; 2],
+    scale: f32,
+    mode: Mode,
+) -> Option<Annotation> {
     tab.session
         .as_ref()
         .and_then(|s| {
-            s.annotations
-                .iter()
-                .rev()
-                .find(|a| a.page == page && a.hit_test(point, 5. / scale))
+            s.annotations.iter().rev().find(|a| {
+                a.page == page && selectable_in_mode(a, mode) && a.hit_test(point, 5. / scale)
+            })
         })
         .cloned()
 }
@@ -2603,6 +2812,9 @@ impl Viewer {
         }
     }
     pub(super) fn apply_pending_annotation(&mut self) -> bool {
+        if !self.finish_voice_recording() {
+            return false;
+        }
         self.editor.property_edit = None;
         let Some(tab) = self.tabs.get_mut(self.active) else {
             return true;
@@ -2773,6 +2985,7 @@ impl Viewer {
         } else {
             tool
         };
+        self.editor.suggestion = None;
         self.editor.select_tool(next);
         self.editor.library_open = false;
         self.editor.signature_open = false;
@@ -2791,15 +3004,29 @@ impl Viewer {
         });
     }
 
-    /// Each drawing family occupies its original slot. All four groups use
-    /// the same hover/click behavior, without touching a draft on hover.
+    /// Tool families share one slot and hover menu without changing a draft on hover.
     fn drawing_tool_group(&mut self, ui: &mut egui::Ui, family: ToolFamily) {
+        let ink = color(
+            self.editor
+                .draft
+                .as_ref()
+                .map_or(self.editor.style.color, |a| a.style.color),
+            1.,
+        );
         let line_stroke = if self.editor.tool.is_line() {
             self.editor.style.stroke
         } else {
             self.editor.line_stroke
         };
+        if matches!(self.editor.tool, Tool::Select | Tool::Lasso) {
+            self.editor.selection_tool = self.editor.tool;
+        }
         let (current, selected, blocked) = match family {
+            ToolFamily::Selection => (
+                (self.editor.selection_tool, None),
+                matches!(self.editor.tool, Tool::Select | Tool::Lasso),
+                &mut self.editor.selection_hover_blocked,
+            ),
             ToolFamily::Line => (
                 (self.editor.line_tool, Some(line_stroke)),
                 self.editor.tool.is_line(),
@@ -2822,7 +3049,7 @@ impl Viewer {
             ),
         };
         let selected = selected && !self.editor.library_open;
-        match hover_tool_group(ui, family, current, selected, blocked) {
+        match hover_tool_group(ui, family, current, selected, blocked, ink) {
             Some(ToolGroupAction::Toggle) => self.toggle_editor_tool(ui.ctx(), current.0),
             Some(ToolGroupAction::Choose((tool, stroke))) if self.apply_pending_annotation() => {
                 self.editor.select_tool(tool);
@@ -2868,6 +3095,47 @@ impl Viewer {
                         .selected(self.editor.tool == tool && !self.editor.library_open);
                     if ui.add(button).clicked() {
                         self.toggle_editor_tool(&ctx, tool);
+                        ui.close();
+                    }
+                }
+                ui.separator();
+                for (label, kind, tool) in [
+                    (
+                        "Suggest replacement",
+                        mypdf_milestone0::review::SuggestionKind::Replace,
+                        Tool::Strikeout,
+                    ),
+                    (
+                        "Insert text here",
+                        mypdf_milestone0::review::SuggestionKind::Insert,
+                        Tool::Note,
+                    ),
+                ] {
+                    if ui
+                        .add(
+                            ActionButton::new(Icon::Text, label)
+                                .selected(self.editor.suggestion == Some(kind)),
+                        )
+                        .clicked()
+                    {
+                        if self.apply_pending_annotation() {
+                            self.editor.select_tool(tool);
+                            self.editor.suggestion = Some(kind);
+                            self.editor.voice_note = false;
+                            self.editor.library_open = false;
+                            if let Some(tab) = self.tabs.get_mut(self.active) {
+                                selection::set(tab, &mut self.editor, vec![]);
+                            }
+                            self.status = Some((
+                                if tool == Tool::Strikeout {
+                                    "Drag across text to suggest new wording."
+                                } else {
+                                    "Click where the proposed text should be inserted."
+                                }
+                                .into(),
+                                false,
+                            ));
+                        }
                         ui.close();
                     }
                 }
@@ -2950,7 +3218,7 @@ impl Viewer {
                             ui.add_enabled_ui(editable, |ui| {
                                 let tools: &[Tool] = if self.editor.mode == Mode::Draw {
                                     &[
-                                        Tool::Select, Tool::Lasso, Tool::Pen, Tool::Eraser,
+                                        Tool::Select, Tool::Pen, Tool::Eraser,
                                         Tool::Polyline, Tool::Polygon,
                                     ]
                                 } else {
@@ -2960,6 +3228,10 @@ impl Viewer {
                                     DEFAULT_INK
                                 } else { self.editor.style.color };
                                 for &tool in tools {
+                                    if tool == Tool::Select {
+                                        self.drawing_tool_group(ui, ToolFamily::Selection);
+                                        continue;
+                                    }
                                     if matches!(tool, Tool::Highlight | Tool::Pen | Tool::Rectangle) {
                                         ui.separator();
                                     }
@@ -2968,19 +3240,43 @@ impl Viewer {
                                     } else {
                                         ActionButton::new(tool.icon(), tool.label()).compact()
                                     }.selected(self.editor.tool == tool && !self.editor.library_open);
-                                    let tinted = self.editor.mode == Mode::Annotate
-                                        || tool == Tool::Pen || self.editor.tool == tool;
-                                    if !matches!(tool, Tool::Select | Tool::Lasso | Tool::Eraser) && tinted {
-                                        button = button.tint(color(if tool == Tool::Highlight { HIGHLIGHT } else { ink }, 1.));
+                                    if !matches!(tool, Tool::Select | Tool::Lasso | Tool::Eraser) {
+                                        if self.editor.mode == Mode::Draw {
+                                            button = button.drawing_ink(color(self.editor.draft.as_ref().map_or(self.editor.style.color, |a| a.style.color), 1.));
+                                        } else {
+                                            button = button.tint(color(if tool == Tool::Highlight { HIGHLIGHT } else { ink }, 1.));
+                                        }
                                     }
                                     let response = ui.add(button);
                                     let response = match tool {
                                         Tool::Text => response.on_hover_text("Text box: visible text on the page. Double-click an existing box to type; drag to move it."),
-                                        Tool::Note => response.on_hover_text("Comment: place a small note icon. Read and edit its contents in the side panel."),
+                                        Tool::Note => response.on_hover_text("Comment: place a note marker. Click it for a popover; open the panel for longer notes."),
                                         Tool::Callout => response.on_hover_text("Callout: visible text in a box with a leader pointing to a detail."),
                                         _ => response,
                                     };
-                                    if response.clicked() {
+                                    if tool == Tool::Note {
+                                        let mut choice = None;
+                                        egui::Popup::menu(&response)
+                                            .open_memory(ui::menu_hover_open(&response))
+                                            .show(|ui| {
+                                                for (voice, icon, label) in [(false, Icon::Note, "Text note"), (true, Icon::Microphone, "Voice note")] {
+                                                    if ui.add(ActionButton::new(icon, label).selected(self.editor.voice_note == voice)).clicked() {
+                                                        choice = Some(voice); ui.close();
+                                                    }
+                                                }
+                                            });
+                                        if choice.is_some() { ui::menu_hover_chosen(&response); }
+                                        if let Some(voice) = choice && self.apply_pending_annotation() {
+                                            self.editor.suggestion = None;
+                                            self.editor.voice_note = voice;
+                                            self.editor.select_tool(Tool::Note);
+                                            self.editor.library_open = false;
+                                            self.inspector = true;
+                                            if let Some(tab) = self.tabs.get_mut(self.active) {
+                                                selection::set(tab, &mut self.editor, vec![]);
+                                            }
+                                        }
+                                    } else if response.clicked() {
                                         self.toggle_editor_tool(ctx, tool);
                                     }
                                 }
@@ -3275,6 +3571,9 @@ impl Viewer {
         }
     }
     pub(super) fn annotation_inspector(&mut self, ctx: &egui::Context) {
+        if self.editor.note_popup.is_some() {
+            return;
+        }
         if let Some(note) = self.selected_note() {
             self.note_inspector(ctx, note);
             return;
@@ -3938,39 +4237,19 @@ impl Viewer {
                                 self.editor.library_tab = label.into();
                             }
                         }
-                        let add = ui.add(ActionButton::new(
-                            Icon::Plus,
-                            if self.editor.library_tab == "Stamps" { "Add stamp" } else { "Add artwork" },
-                        ).compact());
-                        egui::Popup::menu(&add).show(|ui| {
-                        if ui.add(ActionButton::new(Icon::Text, "SVG code…")).clicked() {
-                            self.editor.svg = SvgEditor::default();
-                            self.editor.svg.open = true;
-                            self.editor.svg.stamp = self.editor.library_tab == "Stamps";
-                            ui.close();
+                        if let Some(action) = asset_collections::actions(ui) {
+                            match action {
+                                asset_collections::Action::Manage => self.editor.collections.open(&self.editor.library_tab),
+                                asset_collections::Action::Svg => {
+                                    self.editor.svg = SvgEditor::default();
+                                    self.editor.svg.open = true;
+                                    self.editor.svg.stamp = self.editor.library_tab == "Stamps";
+                                }
+                                asset_collections::Action::Prompt => self.editor.create_stamp_prompt(),
+                                asset_collections::Action::Import => import = !self.editor.asset_busy,
+                                asset_collections::Action::Signature => self.editor.open_signature(),
+                            }
                         }
-                        if ui
-                            .add(ActionButton::new(Icon::Sparkle, "Create with prompt…"))
-                            .clicked()
-                        {
-                            self.editor.create_stamp_prompt();
-                            ui.close();
-                        }
-                        import = ui
-                            .add_enabled(
-                                !self.editor.asset_busy,
-                                ActionButton::new(Icon::Import, "Import image / SVG…"),
-                            )
-                            .clicked();
-                        if import { ui.close(); }
-                        if ui
-                            .add(ActionButton::new(Icon::Sign, "Signature…"))
-                            .clicked()
-                        {
-                            self.editor.open_signature();
-                            ui.close();
-                        }
-                    });
                     });
                     let search = ui.add(
                         egui::TextEdit::singleline(&mut self.editor.library_query)
@@ -4016,9 +4295,11 @@ impl Viewer {
                             "Stamps" => a.stamp && match self.editor.stamp_source { 0=>builtin.is_some(),1=>builtin.is_none(),2=>a.favorite,_=>a.last_used>0 },
                             other => builtin.is_some_and(|b|b.category==other),
                         };
-                        collection && format!("{} {} {}",a.name,a.tags,a.folder).to_lowercase().contains(&query)
+                        collection && self.editor.collections.visible(&a.id,builtin.is_none_or(|b|b.default_visible))
+                            && format!("{} {} {}",a.name,a.tags,a.folder).to_lowercase().contains(&query)
                             && (self.editor.library_folder.is_empty() || a.folder==self.editor.library_folder || !matches!(self.editor.library_tab.as_str(),"Stamps"|"Saved"))
                     }).collect();
+                    entries.sort_by_key(|(_,a)|self.editor.collections.rank(&self.editor.library_tab,&a.id));
                     if self.editor.library_tab=="Stamps" && self.editor.stamp_source==3 { entries.sort_by_key(|(_,a)|std::cmp::Reverse(a.last_used)); }
                     ui.add_space(4.0);
                     egui::ScrollArea::vertical()
@@ -6438,6 +6719,228 @@ mod tests {
         input(app, ctx, events);
     }
     #[test]
+    fn annotation_drag_tracks_pointer_smoothly_across_alignment_guides() {
+        let ctx = egui::Context::default();
+        let mut app = Viewer::new(&eframe::CreationContext::_new_kittest(ctx.clone()), vec![]);
+        app.new_blank(&ctx);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while app.tabs[0].session.is_none() {
+            app.events(&ctx);
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        app.editor.mode = Mode::Annotate;
+        app.editor.tool = Tool::Select;
+        app.editor.snapping = true;
+        let a = Annotation::new(
+            0,
+            [100., 100., 200., 160.],
+            Kind::Text {
+                text: "Move smoothly".into(),
+            },
+            Style::default(),
+        );
+        app.tabs[0]
+            .session
+            .as_mut()
+            .unwrap()
+            .commit(vec![a.clone()])
+            .unwrap();
+        selection::set(&mut app.tabs[0], &mut app.editor, vec![a.id.clone()]);
+        input(&mut app, &ctx, vec![]);
+        pointer(&mut app, &ctx, [150., 130.], Some(true));
+        let center = app.tabs[0].pages[0].width / 2.;
+        for offset in [-7., -5., -3., -1., 1., 3., 5., 7., -2.] {
+            pointer(&mut app, &ctx, [center + offset, 130.], None);
+            let gesture = app.editor.gesture.as_ref().unwrap();
+            let preview = gesture.preview.as_ref().unwrap();
+            assert!(
+                (preview.rect[0] - (center + offset - 50.)).abs() < 0.001,
+                "guides must not move the object away from the pointer"
+            );
+            if offset.abs() < 6. {
+                assert!(gesture.guides.x.is_some());
+            }
+        }
+        pointer(&mut app, &ctx, [center - 2., 130.], Some(false));
+        let session = app.tabs[0].session.as_mut().unwrap();
+        assert!(
+            (session.annotations[0].rect[0] - (center - 50.)).abs() < 0.001,
+            "release still aligns to the displayed guide"
+        );
+        session.undo();
+        assert_eq!(session.annotations[0], a);
+    }
+
+    #[test]
+    fn newly_drawn_shape_handles_take_priority_over_the_creation_tool() {
+        for (tool, top, click_first) in [
+            (Tool::Rectangle, 150., false),
+            (Tool::Ellipse, 10., false),
+            (Tool::Rectangle, 150., true),
+        ] {
+            let ctx = egui::Context::default();
+            let mut app = Viewer::new(&eframe::CreationContext::_new_kittest(ctx.clone()), vec![]);
+            app.new_blank(&ctx);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while app.tabs[0].session.is_none() {
+                app.events(&ctx);
+                assert!(std::time::Instant::now() < deadline);
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            app.editor.mode = Mode::Draw;
+            app.editor.tool = tool;
+            app.editor.hide_guides = false;
+            input(&mut app, &ctx, vec![]);
+            pointer(&mut app, &ctx, [150., top], Some(true));
+            pointer(&mut app, &ctx, [250., top + 70.], None);
+            pointer(&mut app, &ctx, [250., top + 70.], Some(false));
+            let mark = app.tabs[0].session.as_ref().unwrap().annotations[0].clone();
+            assert!(
+                app.editor.tool == tool,
+                "creation remains armed away from handles"
+            );
+            let start = manipulation::rotation_handle(&mark, 1.).unwrap();
+            if click_first {
+                pointer(&mut app, &ctx, start, Some(true));
+                pointer(&mut app, &ctx, start, Some(false));
+                assert_eq!(app.tabs[0].selected_annotation.as_ref(), Some(&mark.id));
+            }
+            pointer(&mut app, &ctx, start, Some(true));
+            pointer(&mut app, &ctx, [260., top], None);
+            pointer(&mut app, &ctx, [260., top + 35.], Some(false));
+            let session = app.tabs[0].session.as_mut().unwrap();
+            assert_eq!(
+                session.annotations.len(),
+                1,
+                "rotation must not create a second shape"
+            );
+            assert!((session.annotations[0].rotation - 90.).abs() < 0.1);
+            assert_eq!(session.annotations[0].rect, mark.rect);
+            session.undo();
+            assert_eq!(session.annotations, vec![mark.clone()]);
+            // A resize handle has the same priority, even if drawing is armed again.
+            app.editor.tool = tool;
+            pointer(&mut app, &ctx, [mark.rect[2], mark.rect[3]], Some(true));
+            pointer(
+                &mut app,
+                &ctx,
+                [mark.rect[2] + 30., mark.rect[3] + 20.],
+                None,
+            );
+            pointer(
+                &mut app,
+                &ctx,
+                [mark.rect[2] + 40., mark.rect[3] + 30.],
+                Some(false),
+            );
+            let session = app.tabs[0].session.as_ref().unwrap();
+            assert_eq!(session.annotations.len(), 1);
+            assert!(session.annotations[0].rect[2] > mark.rect[2]);
+        }
+    }
+
+    #[test]
+    fn completed_drawing_body_grabs_instead_of_starting_another_object() {
+        for tool in [Tool::Rectangle, Tool::Ellipse, Tool::Arrow, Tool::Pen] {
+            for (fast, other) in [(false, false), (true, false), (false, true), (true, true)] {
+                let ctx = egui::Context::default();
+                let mut app =
+                    Viewer::new(&eframe::CreationContext::_new_kittest(ctx.clone()), vec![]);
+                app.new_blank(&ctx);
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+                while app.tabs[0].session.is_none() {
+                    app.events(&ctx);
+                    assert!(std::time::Instant::now() < deadline);
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                app.editor.mode = Mode::Draw;
+                app.editor.tool = tool;
+                app.editor.hide_guides = true;
+                app.editor.snapping = false;
+                input(&mut app, &ctx, vec![]);
+                pointer(&mut app, &ctx, [100., 150.], Some(true));
+                pointer(&mut app, &ctx, [220., 230.], None);
+                pointer(&mut app, &ctx, [220., 230.], Some(false));
+                let original = app.tabs[0].session.as_ref().unwrap().annotations[0].clone();
+                assert!(app.editor.tool == tool);
+                if other {
+                    pointer(&mut app, &ctx, [350., 350.], Some(true));
+                    pointer(&mut app, &ctx, [420., 420.], None);
+                    pointer(&mut app, &ctx, [420., 420.], Some(false));
+                }
+                let count = if other { 2 } else { 1 };
+                if fast {
+                    let start = pos2(210., 240.);
+                    let end = start + vec2(30., 40.);
+                    input(
+                        &mut app,
+                        &ctx,
+                        vec![
+                            egui::Event::PointerMoved(start),
+                            egui::Event::PointerButton {
+                                pos: start,
+                                button: egui::PointerButton::Primary,
+                                pressed: true,
+                                modifiers: egui::Modifiers::NONE,
+                            },
+                            egui::Event::PointerMoved(end),
+                            egui::Event::PointerButton {
+                                pos: end,
+                                button: egui::PointerButton::Primary,
+                                pressed: false,
+                                modifiers: egui::Modifiers::NONE,
+                            },
+                        ],
+                    );
+                } else {
+                    pointer(&mut app, &ctx, [160., 190.], Some(true));
+                    pointer(&mut app, &ctx, [190., 230.], None);
+                    assert!(app.editor.gesture.as_ref().unwrap().original.is_some());
+                    pointer(&mut app, &ctx, [190., 230.], Some(false));
+                }
+                assert!(app.editor.tool == Tool::Select);
+                let session = app.tabs[0].session.as_mut().unwrap();
+                assert_eq!(
+                    session.annotations.len(),
+                    count,
+                    "body drag must not add another drawing"
+                );
+                let moved = &session.annotations[0];
+                assert_eq!(moved.id, original.id);
+                for i in 0..4 {
+                    assert!(
+                        (moved.rect[i] - original.rect[i] - if i % 2 == 0 { 30. } else { 40. })
+                            .abs()
+                            < 0.01
+                    );
+                }
+                session.undo();
+                assert_eq!(session.annotations.len(), count);
+                assert_eq!(session.annotations[0], original);
+                app.editor.tool = tool;
+                pointer(&mut app, &ctx, [350., 500.], Some(true));
+                pointer(&mut app, &ctx, [420., 570.], None);
+                pointer(&mut app, &ctx, [420., 570.], Some(false));
+                assert_eq!(
+                    app.tabs[0].session.as_ref().unwrap().annotations.len(),
+                    count + 1,
+                    "empty space still creates drawings"
+                );
+                app.editor.select_tool(tool);
+                pointer(&mut app, &ctx, [130., 170.], Some(true));
+                pointer(&mut app, &ctx, [190., 210.], None);
+                pointer(&mut app, &ctx, [190., 210.], Some(false));
+                assert_eq!(
+                    app.tabs[0].session.as_ref().unwrap().annotations.len(),
+                    count + 2,
+                    "explicitly choosing a tool allows drawing over an existing object"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn rotation_handle_drag_is_one_undo_step_and_keeps_object_center() {
         let ctx = egui::Context::default();
         let mut app = Viewer::new(&eframe::CreationContext::_new_kittest(ctx.clone()), vec![]);
@@ -7133,6 +7636,23 @@ mod tests {
     }
 
     #[test]
+    fn comment_menu_chooses_voice_or_text_without_an_extra_toolbar_slot() {
+        let (ctx, mut app) = ready_ribbon();
+        app.editor.mode = Mode::Annotate;
+        let revision = app.tabs[0].session.as_ref().unwrap().revision();
+        for (label, voice) in [("Voice note", true), ("Text note", false)] {
+            let at = ribbon_button(&mut app, &ctx, "Comment");
+            ribbon_click(&mut app, &ctx, at);
+            let choice = ribbon_button(&mut app, &ctx, label);
+            ribbon_click(&mut app, &ctx, choice);
+            assert!(app.editor.tool == Tool::Note);
+            assert_eq!(app.editor.voice_note, voice);
+            assert!(app.editor.voice.recorder.is_none());
+            assert_eq!(app.tabs[0].session.as_ref().unwrap().revision(), revision);
+        }
+    }
+
+    #[test]
     fn annotation_ribbon_labels_adapt_to_width_and_density_without_wrapping() {
         let (ctx, mut app) = ready_ribbon();
         let _restore = RestoreDensity(theme::density());
@@ -7182,7 +7702,7 @@ mod tests {
                     .collect();
                 assert_eq!(
                     buttons.len(),
-                    9 + usize::from(touch_tools::controls_available(&ctx)),
+                    8 + usize::from(touch_tools::controls_available(&ctx)),
                     "Touch settings, the annotation actions and More remain available"
                 );
                 let top = buttons[0].y0;
@@ -7206,6 +7726,48 @@ mod tests {
         assert!(app.editor.tool == Tool::Select);
     }
 
+    #[test]
+    fn comment_menu_opens_from_accessibility_without_pointer_hover() {
+        let (ctx, mut app) = ready_ribbon();
+        app.editor.mode = Mode::Annotate;
+        for _ in 0..3 {
+            ribbon_frame(&mut app, &ctx, vec![], 900.);
+        }
+        let output = ribbon_frame(&mut app, &ctx, vec![], 900.);
+        let id = output
+            .platform_output
+            .accesskit_update
+            .unwrap()
+            .nodes
+            .into_iter()
+            .find(|(_, node)| node.label() == Some("Comment"))
+            .unwrap()
+            .0;
+        ribbon_frame(
+            &mut app,
+            &ctx,
+            vec![egui::Event::AccessKitActionRequest(
+                egui::accesskit::ActionRequest {
+                    action: egui::accesskit::Action::Click,
+                    target: id,
+                    data: None,
+                },
+            )],
+            900.,
+        );
+        let output = ribbon_frame(&mut app, &ctx, vec![], 900.);
+        let nodes = output.platform_output.accesskit_update.unwrap().nodes;
+        assert!(
+            nodes
+                .iter()
+                .any(|(_, node)| node.label() == Some("Voice note"))
+        );
+        assert!(
+            nodes
+                .iter()
+                .any(|(_, node)| node.label() == Some("Text note"))
+        );
+    }
     #[test]
     fn comfortable_color_palette_wraps_without_small_or_overlapping_targets() {
         let ctx = egui::Context::default();
@@ -7277,7 +7839,6 @@ mod tests {
                     Tool::AreaHighlight,
                     Tool::Pen,
                     Tool::Text,
-                    Tool::Note,
                     Tool::Callout,
                 ],
             ),
@@ -7336,6 +7897,45 @@ mod tests {
         }
         assert!(app.tabs[0].session.as_ref().unwrap().annotations.is_empty());
     }
+    #[test]
+    fn selection_hover_group_switches_tools_in_one_slot_without_editing_pdf() {
+        for mode in [Mode::Draw, Mode::Annotate] {
+            let (ctx, mut app) = ready_ribbon();
+            app.editor.mode = mode;
+            let revision = app.tabs[0].session.as_ref().unwrap().revision();
+            ribbon_choose(&mut app, &ctx, "Select", "Lasso select");
+            assert!(app.editor.tool == Tool::Lasso);
+            ribbon_frame(
+                &mut app,
+                &ctx,
+                vec![egui::Event::PointerMoved(pos2(0., 200.))],
+                900.,
+            );
+            let output = ribbon_frame(&mut app, &ctx, vec![], 900.);
+            let nodes = output.platform_output.accesskit_update.unwrap().nodes;
+            assert_eq!(
+                nodes
+                    .iter()
+                    .filter(|(_, n)| n.label() == Some("Lasso select"))
+                    .count(),
+                1
+            );
+            assert!(
+                !nodes.iter().any(|(_, n)| n.label() == Some("Select")),
+                "one shared toolbar slot"
+            );
+            ribbon_choose(&mut app, &ctx, "Lasso select", "Select");
+            assert!(app.editor.tool == Tool::Select);
+            assert_eq!(app.tabs[0].session.as_ref().unwrap().revision(), revision);
+            // The slot remembers Lasso when another tool becomes active.
+            ribbon_choose(&mut app, &ctx, "Select", "Lasso select");
+            app.editor.select_tool(Tool::Pen);
+            let at = ribbon_button(&mut app, &ctx, "Lasso select");
+            ribbon_click(&mut app, &ctx, at);
+            assert!(app.editor.tool == Tool::Lasso);
+        }
+    }
+
     #[test]
     fn arrow_hover_changes_no_document_and_direct_click_arms_remembered_route() {
         let (ctx, mut app) = ready_ribbon();
@@ -7543,7 +8143,7 @@ mod tests {
                 .filter(|(_, n)| n.label() != Some("Touch settings"))
                 .filter_map(|(_, n)| n.bounds())
                 .collect();
-            assert_eq!(buttons.len(), 10);
+            assert_eq!(buttons.len(), 9);
             assert!(buttons.iter().all(|r| r.x0 >= 0. && r.x1 <= 720.1));
         }
     }
@@ -7714,7 +8314,7 @@ mod tests {
                 .collect();
             assert_eq!(
                 buttons.len(),
-                10,
+                9,
                 "Each family must occupy exactly one button"
             );
             assert!(buttons.iter().all(|r| r.x0 >= 0. && r.x1 <= 720.1));

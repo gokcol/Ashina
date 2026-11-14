@@ -1,10 +1,10 @@
 # Privacy Policy for MyPDF (OG)
 
-Effective date: 10 November 2026
+Effective date: 14 November 2026
 
 This policy covers MyPDF (OG), the Microsoft Store edition of MyPDF by
 Orhan Gökçöl, and the MyPDF desktop application distributed through the project's
-GitHub releases. It describes the behavior in version 2.3.1.
+GitHub releases. It describes the behavior in version 3.1.1.
 
 ## Information processed on your device
 
@@ -46,6 +46,12 @@ to your settings and its own policies.
 Settings, artwork and recovery files are not separately encrypted by MyPDF.
 Their protection depends on operating-system access controls and any device
 encryption you enable. Recovery copies can contain sensitive document content.
+
+## Voice comments
+
+MyPDF accesses the default microphone only when you press Record for a voice comment and the operating system grants access. Recording and playback run locally. You can pause, stop and keep, or discard a recording. Each voice note is limited to three minutes.
+
+Kept recordings become part of the document's local edits and may be included in recovery copies. Saving the PDF embeds the recording as a WAV file attachment; anyone who receives that PDF may be able to extract and listen to it. Save audio writes a separate local WAV file only at your request. MyPDF does not upload recordings or transcribe them. Prepare for sharing can remove recordings from a separate output copy.
 
 ## On-device translation
 

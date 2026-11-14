@@ -855,7 +855,7 @@ impl Viewer {
             && !self.about_open
             && !self.recovery.open
             && self.close_intent.is_none()
-            && !self.productivity.owns_input()
+            && !self.workflow_owns_input()
             && !self.workbench_owns_shortcuts()
             && !ctx.wants_keyboard_input()
             && !self.editor.text_editing

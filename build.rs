@@ -7,6 +7,7 @@ fn main() {
     println!("cargo:rerun-if-changed=native/translation/TranslationBridge.swift");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
         build_mac_updater();
+        build_mac_microphone();
         build_apple_translation();
     }
     #[cfg(windows)]
@@ -184,4 +185,48 @@ fn build_apple_translation() {
     for framework in ["Translation", "_Translation_SwiftUI"] {
         println!("cargo:rustc-link-arg=-Wl,-weak_framework,{framework}");
     }
+}
+
+fn build_mac_microphone() {
+    use std::{path::PathBuf, process::Command};
+    println!("cargo:rerun-if-changed=native/audio/Microphone.m");
+    let out = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+    let arch = if std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("aarch64") {
+        "arm64"
+    } else {
+        "x86_64"
+    };
+    let object = out.join("Microphone.o");
+    assert!(
+        Command::new("xcrun")
+            .args([
+                "clang",
+                "-fobjc-arc",
+                "-fmodules",
+                "-Wall",
+                "-Werror",
+                "-arch",
+                arch,
+                "-mmacosx-version-min=12.0",
+                "-c",
+                "native/audio/Microphone.m",
+                "-o"
+            ])
+            .arg(&object)
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        Command::new("xcrun")
+            .args(["ar", "crs"])
+            .arg(out.join("libmypdf_microphone.a"))
+            .arg(object)
+            .status()
+            .unwrap()
+            .success()
+    );
+    println!("cargo:rustc-link-search=native={}", out.display());
+    println!("cargo:rustc-link-lib=static=mypdf_microphone");
+    println!("cargo:rustc-link-lib=framework=AVFoundation");
 }

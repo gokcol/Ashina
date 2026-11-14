@@ -2,6 +2,7 @@ mod annotation_geometry;
 mod annotation_image;
 mod annotation_render;
 mod annotation_text;
+mod asset_collections;
 mod clipboard;
 mod comparison;
 mod content;
@@ -46,6 +47,7 @@ mod save;
 mod search_results;
 mod selection;
 mod selection_keys;
+mod sharing;
 mod shell_menu;
 mod shrink;
 mod sign_tools;
@@ -66,6 +68,7 @@ mod translation;
 mod translation_note;
 mod ui;
 mod updates;
+mod voice_audio;
 mod watermark;
 #[cfg(any(target_os = "windows", test))]
 mod wheel;
@@ -306,6 +309,7 @@ pub struct Viewer {
     unprotect: bool,
     /// Reduce File Size is open, with this quality chosen.
     shrink: Option<mypdf_milestone0::compress::Level>,
+    sharing: sharing::State,
     watermark: Option<watermark::Draft>,
     nup: Option<nup::Draft>,
     ocr_confirm: bool,
@@ -386,6 +390,7 @@ impl Viewer {
             protect: None,
             unprotect: false,
             shrink: None,
+            sharing: sharing::State::default(),
             watermark: None,
             nup: None,
             ocr_confirm: false,
@@ -736,7 +741,7 @@ impl Viewer {
             return;
         }
         if self.content.context.bookmark.is_some()
-            || self.productivity.owns_input()
+            || self.workflow_owns_input()
                 && !matches!(
                     action,
                     "workflow_settings" | "templates" | "batch" | "sharing_copy"
@@ -1214,7 +1219,7 @@ impl Viewer {
         if self.printing.previewing() {
             return;
         }
-        if self.productivity.owns_input() || self.content.context.bookmark.is_some() {
+        if self.workflow_owns_input() || self.content.context.bookmark.is_some() {
             return;
         }
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Comma)) {
@@ -1625,7 +1630,7 @@ impl Viewer {
                     MODES
                         .iter()
                         .map(|(_, icon, label)| {
-                            let mut b = ActionButton::new(*icon, label).tab();
+                            let mut b = ActionButton::new(*icon, label).mode_tab();
                             if compact {
                                 b = b.compact();
                             }
@@ -1655,7 +1660,7 @@ impl Viewer {
                     ui::segment_track(ui, |ui| {
                         for (mode, icon, label) in MODES {
                             let button = ActionButton::new(icon, label)
-                                .tab()
+                                .mode_tab()
                                 .selected(viewer.editor.mode == mode);
                             if ui
                                 .add(if compact { button.compact() } else { button })
@@ -2396,7 +2401,7 @@ impl Viewer {
                         annotation_text::overlay(&mut self.editor, tab, ui, page, page_rect, scale, &mut self.status);
                         }
                         self.content.hide_guides = self.editor.hide_guides;
-                        self.content.paused = artwork_owns || table_owns || self.table.deferring_input() || self.productivity.owns_input() || placing || self.redaction.active && self.editor.mode == editing::Mode::Edit;
+                        self.content.paused = artwork_owns || table_owns || self.table.deferring_input() || self.productivity.owns_input() || self.sharing.is_open() || self.review.owns_input() || self.editor.collections.is_open() || placing || self.redaction.active && self.editor.mode == editing::Mode::Edit;
                         if self.editor.mode == editing::Mode::Forms {
                             let editable = !self.content.busy
                                 && !self.organizer.busy
@@ -2539,6 +2544,7 @@ impl eframe::App for Viewer {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         #[cfg(target_os = "macos")]
         window_drag::configure(frame);
+        self.voice_tick(ctx);
         theme::sync(ctx.theme());
         touch_tools::observe(ctx);
         self.tick += 1;
@@ -2701,6 +2707,7 @@ impl eframe::App for Viewer {
         self.form_events(ctx);
         self.form_dialogs(ctx);
         self.table_window(ctx);
+        self.collection_manager(ctx);
         if let Some(next) =
             ctx.data_mut(|d| d.remove_temp::<usize>(egui::Id::new("table_next_cell")))
         {
@@ -2709,6 +2716,7 @@ impl eframe::App for Viewer {
         self.password_prompt(ctx);
         self.protect_dialogs(ctx);
         self.shrink_dialog(ctx);
+        self.sharing_dialog(ctx);
         self.link_dialog(ctx);
         self.watermark_dialog(ctx);
         self.nup_dialog(ctx);
@@ -3154,9 +3162,15 @@ mod tests {
                 Some(ellipse.id.as_str())
             );
             click(&mut app, rect.min + vec2(312., 102.) * scale);
+            assert_eq!(
+                app.tabs[0].selected_annotation.as_deref(),
+                Some(ellipse.id.as_str()),
+                "the visible corner handle retains selection even outside the ellipse"
+            );
+            click(&mut app, rect.min + vec2(310., 120.) * scale);
             assert!(
                 app.tabs[0].selected_annotation.is_none(),
-                "ellipse bounding-box corners are outside the shape"
+                "empty space away from the ellipse and its handles clears selection"
             );
         }
         assert_eq!(

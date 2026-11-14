@@ -1,6 +1,6 @@
 //! Local copy workflows and placement settings. All long PDF work runs off the UI thread.
 use super::*;
-use mypdf_milestone0::workflows::{self, BatchOptions, ShareOptions, Template};
+use mypdf_milestone0::workflows::{self, BatchOptions, Template};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Serialize, Deserialize)]
@@ -14,7 +14,6 @@ enum Panel {
     Settings,
     Templates,
     Batch,
-    Share,
 }
 struct Preview {
     bytes: Vec<u8>,
@@ -26,7 +25,6 @@ enum Event {
     Snapshot(Result<Vec<u8>, String>),
     TemplateSaved(Template),
     TemplateOpened(Template, Vec<u8>),
-    Saved(String),
     Preview(Result<(Vec<u8>, egui::ColorImage, String), String>),
     Row(String),
     Done,
@@ -41,9 +39,7 @@ pub(super) struct State {
     destination: Option<PathBuf>,
     preview: Option<Preview>,
     preview_index: usize,
-    share: ShareOptions,
     source: Option<Vec<u8>>,
-    source_name: String,
     source_style: Option<workflows::TextDefaults>,
     busy: bool,
     cancel: Arc<mypdf_milestone0::ocr::Cancellation>,
@@ -83,9 +79,7 @@ impl Default for State {
             destination: None,
             preview: None,
             preview_index: 0,
-            share: Default::default(),
             source: None,
-            source_name: String::new(),
             source_style: None,
             busy: false,
             cancel: Arc::default(),
@@ -144,11 +138,8 @@ impl State {
         });
     }
     fn preview(&mut self, ctx: &egui::Context) {
-        let is_share = self.panel == Some(Panel::Share);
-        let source = self.source.clone();
         let path = self.files.get(self.preview_index).cloned();
         let options = self.prefs.recipe.clone();
-        let share = self.share;
         self.preview = None;
         self.busy = true;
         self.message = "Preparing preview…".into();
@@ -157,17 +148,29 @@ impl State {
         let tx = self.tx.clone();
         let ctx = ctx.clone();
         std::thread::spawn(move || {
-            let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(||->anyhow::Result<_>{
-                let bytes=if is_share { source.ok_or_else(||anyhow::anyhow!("No document snapshot"))? } else { mypdf_milestone0::convert::read_bounded(&path.ok_or_else(||anyhow::anyhow!("Choose a PDF"))?,viewer::MAX_FILE_BYTES)? };
-                let (out,summary)=if is_share {
-                    let (out,r)=workflows::sharing_copy(&bytes,share)?;
-                    (out,format!("Removed: {} notes, {} comment fields, {} attachment references, {} metadata entries.",r.notes,r.comment_fields,r.attachment_entries,r.metadata_entries))
-                } else { let out=workflows::process(&bytes,&options,&cancel)?;let summary=format!("{} KB → {} KB · Preview of the first page",bytes.len()/1024,out.len()/1024);(out,summary) };
-                cancel.check()?;
-                let (size,rgba)=viewer::render_page(&out,0,0.8)?;
-                cancel.check()?;
-                Ok((out,egui::ColorImage::from_rgba_unmultiplied(size,&rgba),summary))
-            })).map_err(|_|"This PDF could not be processed; originals are unchanged".to_string()).and_then(|r|r.map_err(|e|format!("{e:#}")));
+            let result =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> anyhow::Result<_> {
+                    let bytes = mypdf_milestone0::convert::read_bounded(
+                        &path.ok_or_else(|| anyhow::anyhow!("Choose a PDF"))?,
+                        viewer::MAX_FILE_BYTES,
+                    )?;
+                    let out = workflows::process(&bytes, &options, &cancel)?;
+                    let summary = format!(
+                        "{} KB → {} KB · Preview of the first page",
+                        bytes.len() / 1024,
+                        out.len() / 1024
+                    );
+                    cancel.check()?;
+                    let (size, rgba) = viewer::render_page(&out, 0, 0.8)?;
+                    cancel.check()?;
+                    Ok((
+                        out,
+                        egui::ColorImage::from_rgba_unmultiplied(size, &rgba),
+                        summary,
+                    ))
+                }))
+                .map_err(|_| "This PDF could not be processed; originals are unchanged".to_string())
+                .and_then(|r| r.map_err(|e| format!("{e:#}")));
             let _ = tx.send(Event::Preview(result));
             ctx.request_repaint();
         });
@@ -423,62 +426,6 @@ impl State {
         });
         ui.weak("Preview a representative file before running. Existing outputs are kept; new copies receive numbered filenames.");
     }
-
-    fn share_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        ui.label(format!("Source snapshot: {}", self.source_name));
-        ui.label("Creates a separate PDF. Review the complete output before sending it.");
-        let mut changed = ui
-            .checkbox(
-                &mut self.share.comments,
-                "Remove notes and comment text (retain visible highlights and drawings)",
-            )
-            .changed();
-        changed |= ui
-            .checkbox(
-                &mut self.share.attachments,
-                "Remove embedded file attachments",
-            )
-            .changed();
-        changed |= ui
-            .checkbox(
-                &mut self.share.metadata,
-                "Remove document metadata and annotation author/date details",
-            )
-            .changed();
-        if changed {
-            self.preview = None;
-        }
-        ui.weak("This is not redaction: page content, form values, bookmarks and hidden layers remain. MyPDF's private object-editing data is removed when cleaning comments or metadata; visible artwork remains.");
-        ui.horizontal(|ui| {
-            if ui
-                .add_enabled(
-                    self.source.is_some(),
-                    egui::Button::new("Review cleaned copy"),
-                )
-                .clicked()
-            {
-                self.preview(ctx);
-            }
-            if ui
-                .add_enabled(
-                    self.preview.is_some(),
-                    egui::Button::new("Save sharing copy…"),
-                )
-                .clicked()
-                && let Some(path) = rfd::FileDialog::new()
-                    .add_filter("PDF", &["pdf"])
-                    .set_file_name("Shared copy.pdf")
-                    .save_file()
-            {
-                let bytes = self.preview.as_ref().unwrap().bytes.clone();
-                self.job(ctx, "Saving sharing copy…", move |cancel| {
-                    cancel.check()?;
-                    mypdf_milestone0::write_new(&path, &bytes)?;
-                    Ok(Event::Saved(format!("Saved {}", path.display())))
-                });
-            }
-        });
-    }
 }
 
 impl Viewer {
@@ -487,7 +434,10 @@ impl Viewer {
             "workflow_settings" => Panel::Settings,
             "templates" => Panel::Templates,
             "batch" => Panel::Batch,
-            "sharing_copy" => Panel::Share,
+            "sharing_copy" => {
+                self.request_sharing();
+                return true;
+            }
             _ => return false,
         };
         if self.productivity.busy || self.content.busy || self.organizer.busy || self.signature_busy
@@ -498,8 +448,7 @@ impl Viewer {
             ));
             return true;
         }
-        if matches!(panel, Panel::Templates | Panel::Share) && self.content.pending_text().is_some()
-        {
+        if matches!(panel, Panel::Templates) && self.content.pending_text().is_some() {
             self.status = Some((
                 "Finish the current text edit before creating a copy".into(),
                 true,
@@ -511,11 +460,10 @@ impl Viewer {
         self.productivity.source = None;
         self.productivity.source_style = Some(self.content.text_defaults());
         self.productivity.message.clear();
-        if matches!(panel, Panel::Templates | Panel::Share)
+        if matches!(panel, Panel::Templates)
             && let Some(tab) = self.tabs.get(self.active).filter(|_| !self.home.visible)
             && let Some(session) = &tab.session
         {
-            self.productivity.source_name = tab.name();
             let source = session.source.clone();
             let annotations = session.annotations.clone();
             let revision = session.revision();
@@ -542,19 +490,12 @@ impl Viewer {
                     self.productivity.busy = false;
                     self.productivity.message = error;
                 }
-                Event::Saved(message) => {
-                    self.productivity.busy = false;
-                    self.productivity.message = message;
-                }
                 Event::Snapshot(result) => {
                     self.productivity.busy = false;
                     match result {
                         Ok(bytes) => {
                             self.productivity.source = Some(bytes);
                             self.productivity.message.clear();
-                            if self.productivity.panel == Some(Panel::Share) {
-                                self.productivity.preview(ctx);
-                            }
                         }
                         Err(e) => self.productivity.message = e,
                     }
@@ -622,7 +563,6 @@ impl Viewer {
             Panel::Settings => "Workflow settings",
             Panel::Templates => "Document templates",
             Panel::Batch => "Batch processing",
-            Panel::Share => "Prepare copy for sharing",
         };
         let state = &mut self.productivity;
         egui::Modal::new(egui::Id::new("productivity_window")).show(ctx, |ui| {
@@ -656,7 +596,6 @@ impl Viewer {
                         Panel::Settings => state.settings_ui(ui),
                         Panel::Templates => state.templates_ui(ui, &mut template_open),
                         Panel::Batch => state.batch_ui(ui, ctx),
-                        Panel::Share => state.share_ui(ui, ctx),
                     });
                     if !state.message.is_empty() {
                         ui.label(&state.message);
@@ -782,34 +721,7 @@ mod tests {
         app.action("undo", &ctx);
         app.action("new", &ctx);
         assert_eq!(app.tabs.len(), 1);
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
-        while app.productivity.busy {
-            let _ = ctx.run(
-                egui::RawInput {
-                    screen_rect: Some(Rect::from_min_size(pos2(0., 0.), vec2(1000., 760.))),
-                    ..Default::default()
-                },
-                |ctx| app.productivity_windows(ctx),
-            );
-            assert!(
-                std::time::Instant::now() < deadline,
-                "{}",
-                app.productivity.message
-            );
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-        let preview = app.productivity.preview.as_ref().expect("cleaned preview");
-        let doc = lopdf::Document::load_mem(&preview.bytes).unwrap();
-        let page = *doc.get_pages().values().next().unwrap();
-        assert!(
-            doc.get_dictionary(page)
-                .unwrap()
-                .get(b"Annots")
-                .unwrap()
-                .as_array()
-                .unwrap()
-                .is_empty()
-        );
+        assert!(app.sharing.is_open());
         assert_eq!(
             app.tabs[0]
                 .session

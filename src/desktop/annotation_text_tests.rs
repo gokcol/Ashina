@@ -792,3 +792,132 @@ fn selecting_existing_text_moves_and_resizes_before_explicit_typing() {
         assert!(ctx.memory(|m| m.has_focus(inline_id(&app))));
     }
 }
+
+#[test]
+fn document_text_layers_are_not_annotation_text_boxes_after_reopen() {
+    use crate::desktop::{annotation_text, selection};
+    use mypdf_milestone0::{annotations, text_layer, text_style::TextFormat};
+    let (mut app, ctx) = fixture(editing::Mode::Annotate, true);
+    let original = app.tabs[0].session.as_ref().unwrap().source.clone();
+    let bytes = text_layer::add(
+        &original,
+        1,
+        "Document text",
+        [80., 150., 280., 70.],
+        18.,
+        [0.; 3],
+        &TextFormat::default(),
+        &[],
+    )
+    .unwrap();
+    let doc = lopdf::Document::load_mem(&bytes).unwrap();
+    let layer = annotations::load(&doc).remove(0);
+    let note = Annotation::new(
+        0,
+        [80., 260., 360., 330.],
+        Kind::Text {
+            text: "Annotation text".into(),
+        },
+        Style::default(),
+    );
+    let bytes = annotations::export(&bytes, &[layer.clone(), note.clone()]).unwrap();
+    app.tabs[0].session = Some(annotations::Session::new(
+        bytes.into(),
+        vec![layer.clone(), note.clone()],
+        true,
+    ));
+    settle(&mut app, &ctx);
+    let inside = page_point(&app, &ctx, 180., 180.);
+    double_click(&mut app, &ctx, inside);
+    assert!(app.tabs[0].selected_annotation.is_none());
+    assert!(app.editor.annotation_text.is_none());
+    let end = inside + vec2(40., 30.);
+    pointer(&mut app, &ctx, inside, Some(true));
+    pointer(&mut app, &ctx, end, None);
+    pointer(&mut app, &ctx, end, Some(false));
+    assert_eq!(annotations(&app)[0], layer);
+    selection::set(
+        &mut app.tabs[0],
+        &mut app.editor,
+        vec![layer.id.clone(), note.id.clone()],
+    );
+    assert_eq!(selection::selected_ids(&app.tabs[0]), vec![note.id.clone()]);
+    annotation_text::start(&mut app.editor, app.tabs[0].id, &layer, false);
+    assert!(app.editor.annotation_text.is_none());
+    let inside = page_point(&app, &ctx, 180., 290.);
+    double_click(&mut app, &ctx, inside);
+    assert!(
+        app.editor.annotation_text.is_some(),
+        "real annotations still allow typing"
+    );
+    app.editor.mode = editing::Mode::Edit;
+    selection::normalize(&mut app.tabs[0], &mut app.editor);
+    assert!(app.tabs[0].selected_annotation.is_none());
+    assert!(app.editor.annotation_text.is_none());
+    assert!(
+        editing::hit_annotation(&app.tabs[0], 0, [180., 290.], 1., editing::Mode::Edit).is_none()
+    );
+    selection::set(
+        &mut app.tabs[0],
+        &mut app.editor,
+        vec![layer.id.clone(), note.id.clone()],
+    );
+    assert_eq!(
+        selection::selected_ids(&app.tabs[0]),
+        vec![layer.id.clone()]
+    );
+    for kind in [
+        Kind::Text {
+            text: "Annotation".into(),
+        },
+        Kind::Note {
+            text: "Comment".into(),
+        },
+        Kind::callout("Callout"),
+        Kind::Stamp {
+            text: "Approved".into(),
+        },
+        Kind::Rectangle,
+        Kind::Ink { strokes: vec![] },
+    ] {
+        let mark = Annotation::new(0, [10., 10., 100., 100.], kind, Style::default());
+        assert!(
+            !editing::selectable_in_mode(&mark, editing::Mode::Edit),
+            "{}",
+            mark.kind.label()
+        );
+        assert!(editing::selectable_in_mode(&mark, editing::Mode::Annotate));
+    }
+    let mut stamp = Annotation::new(
+        0,
+        [10., 10., 100., 100.],
+        Kind::Svg {
+            source: String::new(),
+            tint: false,
+        },
+        Style::default(),
+    );
+    assert!(editing::selectable_in_mode(&stamp, editing::Mode::Edit));
+    stamp.object.stamp = true;
+    assert!(!editing::selectable_in_mode(&stamp, editing::Mode::Edit));
+    stamp.object.stamp = false;
+    stamp.asset_id = Some("custom-drawing".into());
+    assert!(
+        !editing::selectable_in_mode(&stamp, editing::Mode::Edit),
+        "saved drawing artwork remains annotation-only"
+    );
+    selection::set(&mut app.tabs[0], &mut app.editor, vec![layer.id.clone()]);
+    assert_eq!(app.tabs[0].selected_annotation.as_ref(), Some(&layer.id));
+    assert_eq!(
+        editing::hit_annotation(&app.tabs[0], 0, [180., 180.], 1., editing::Mode::Edit)
+            .unwrap()
+            .id,
+        layer.id
+    );
+    app.editor.mode = editing::Mode::Annotate;
+    selection::normalize(&mut app.tabs[0], &mut app.editor);
+    assert!(
+        app.tabs[0].selected_annotation.is_none(),
+        "switching modes clears document-text selection"
+    );
+}

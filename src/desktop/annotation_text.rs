@@ -14,7 +14,7 @@ pub(super) struct State {
 // TextEdit cannot rotate or mirror its caret and glyphs. Keep transformed
 // boxes in their original appearance while the inspector edits their text.
 pub(super) fn supports(a: &Annotation) -> bool {
-    a.rotation.rem_euclid(360.) == 0. && !a.flip_x && !a.flip_y
+    a.object.text.is_none() && a.rotation.rem_euclid(360.) == 0. && !a.flip_x && !a.flip_y
 }
 
 /// Family and real installed faces, shared by new and existing annotations.

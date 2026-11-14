@@ -60,3 +60,23 @@ pub fn csv(marks: &[Annotation]) -> String {
     }
     out
 }
+
+/// A proposed wording change; the original page text is never rewritten.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum SuggestionKind {
+    Replace,
+    Insert,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Suggestion {
+    pub kind: SuggestionKind,
+    pub original: String,
+}
+impl Suggestion {
+    pub fn label(&self) -> &'static str {
+        match self.kind {
+            SuggestionKind::Replace => "Suggest replacement",
+            SuggestionKind::Insert => "Insert text here",
+        }
+    }
+}

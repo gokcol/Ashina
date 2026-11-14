@@ -1,6 +1,12 @@
 //! A PDF comment's icon is its page anchor; its readable contents live here.
 use super::*;
 
+pub(in crate::desktop) struct Popover {
+    tab: u64,
+    note: String,
+    position: egui::Pos2,
+}
+
 impl Viewer {
     pub(in crate::desktop) fn open_note_reader(&mut self, tab_id: u64, note_id: &str) -> bool {
         let Some(tab) = self.tabs.get(self.active).filter(|tab| tab.id == tab_id) else {
@@ -58,17 +64,160 @@ impl Viewer {
             self.editor.mode = Mode::Annotate;
         }
         self.translation.open = false;
+        self.editor.note_popup = None;
         self.inspector = true;
         true
     }
 
     /// Page hit testing runs after panel layout, so open on the next frame.
     pub(in crate::desktop) fn note_reader_requests(&mut self, ctx: &egui::Context) {
+        if !ctx.input(|i| i.pointer.any_down() || i.pointer.any_released()) {
+            self.editor.note_pointer_blocked = false;
+        }
         if let Some((tab, note)) = self.editor.note_requested.take() {
             if self.zen.is_some() {
                 self.toggle_zen(ctx);
             }
-            self.open_note_reader(tab, &note);
+            if self.open_note_reader(tab, &note)
+                && self.selected_note().is_some_and(|a| a.voice.is_none())
+            {
+                self.inspector = false;
+                self.editor.note_popup = Some(Popover {
+                    tab,
+                    note,
+                    position: ctx
+                        .pointer_latest_pos()
+                        .unwrap_or(ctx.content_rect().center())
+                        + vec2(12., 12.),
+                });
+            }
+        }
+        self.note_popover(ctx);
+    }
+
+    fn note_popover(&mut self, ctx: &egui::Context) {
+        let Some(popover) = &self.editor.note_popup else {
+            return;
+        };
+        let Some(selected) = self.selected_note().filter(|a| {
+            a.id == popover.note
+                && self.tabs[self.active].id == popover.tab
+                && matches!(self.editor.mode, Mode::Read | Mode::Annotate | Mode::Draw)
+        }) else {
+            self.editor.note_popup = None;
+            return;
+        };
+        let position = popover.position;
+        let editable = self.tabs[self.active]
+            .session
+            .as_ref()
+            .is_some_and(|s| s.editable)
+            && !selected.object.locked;
+        let tab_id = self.tabs[self.active].id;
+        if self
+            .editor
+            .draft
+            .as_ref()
+            .is_none_or(|a| a.id != selected.id)
+        {
+            self.editor.draft = Some(selected.clone());
+        }
+        let mut close = false;
+        let mut panel = false;
+        let mut review = false;
+        let mut focus = None;
+        let mut open = true;
+        // Popup owns outside clicks. Also block page interaction for its closing
+        // frame so dismissing a note never places another annotation underneath.
+        self.editor.note_pointer_blocked = true;
+        let id = egui::Id::new(("note_popover", tab_id, &selected.id));
+        egui::Popup::new(
+            id,
+            ctx.clone(),
+            egui::Rect::from_min_size(position, vec2(1., 1.)),
+            egui::LayerId::background(),
+        )
+        .open_bool(&mut open)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| {
+            ui.set_width(300_f32.min(ctx.content_rect().width() - 32.));
+            ui.spacing_mut().item_spacing = vec2(8., 9.);
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(selected.suggestion.as_ref().map_or("Note", |s| s.label()))
+                        .strong(),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    close = ui
+                        .add(ActionButton::new(Icon::Close, "Close note").compact())
+                        .clicked();
+                });
+            });
+            let author = &selected.object.review.author;
+            ui.weak(format!(
+                "Page {}{}",
+                selected.page + 1,
+                if author.is_empty() {
+                    String::new()
+                } else {
+                    format!(" · {author}")
+                }
+            ));
+            if let Some(suggestion) = &selected.suggestion {
+                if !suggestion.original.is_empty() {
+                    ui.collapsing("Original wording", |ui| {
+                        ui.label(&suggestion.original);
+                    });
+                }
+                ui.weak("Proposed wording · document text is unchanged");
+            }
+            let text = self.editor.draft.as_mut().unwrap().kind.text_mut().unwrap();
+            egui::ScrollArea::vertical()
+                .max_height(180.)
+                .show(ui, |ui| {
+                    let response = ui.add_enabled(
+                        editable,
+                        egui::TextEdit::multiline(text)
+                            .desired_width(f32::INFINITY)
+                            .desired_rows(5)
+                            .char_limit(8000)
+                            .hint_text("Write a note…"),
+                    );
+                    response.widget_info(|| {
+                        egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, editable, "Note text")
+                    });
+                    if response.has_focus() {
+                        focus = Some(response.id);
+                    }
+                });
+            ui.horizontal(|ui| {
+                panel = ui
+                    .add(ActionButton::new(Icon::Note, "Open in panel"))
+                    .clicked();
+                review = ui.add(ActionButton::new(Icon::Note, "Replies")).clicked();
+            });
+            ui.weak(if selected.object.review.resolved {
+                "Resolved"
+            } else {
+                "Edits are kept when you close this note."
+            });
+        });
+        self.editor.text_editing |= focus.is_some();
+        let committed = self.commit_note_draft(
+            &selected,
+            focus,
+            ctx.input(|i| i.pointer.any_down() || i.pointer.any_released()),
+        );
+        if committed && (close || !open || panel || review) {
+            self.editor.note_popup = None;
+            if panel {
+                self.inspector = true;
+            } else if review {
+                self.review.open = true;
+                self.review.selected = Some(selected.id);
+            } else {
+                selection::set(&mut self.tabs[self.active], &mut self.editor, vec![]);
+            }
         }
     }
 
@@ -87,6 +236,10 @@ impl Viewer {
     }
 
     pub(super) fn note_inspector(&mut self, ctx: &egui::Context, selected: Annotation) {
+        if selected.voice.is_some() {
+            self.voice_inspector(ctx, selected);
+            return;
+        }
         let tab_id = self.tabs[self.active].id;
         let editable = self.tabs[self.active]
             .session
@@ -115,7 +268,11 @@ impl Viewer {
             .show(ctx, |ui| {
                 ui.spacing_mut().item_spacing = vec2(8., 10.);
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Note").size(18.).family(ui::semibold()));
+                    ui.label(
+                        RichText::new(selected.suggestion.as_ref().map_or("Note", |s| s.label()))
+                            .size(18.)
+                            .family(ui::semibold()),
+                    );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         close = ui
                             .add(ActionButton::new(Icon::Close, "Close note").compact())
@@ -131,6 +288,14 @@ impl Viewer {
                 };
                 ui.label(RichText::new(metadata).small().color(theme::muted()));
                 ui.separator();
+                if let Some(suggestion) = &selected.suggestion {
+                    if !suggestion.original.is_empty() {
+                        ui.collapsing("Original wording", |ui| {
+                            ui.label(&suggestion.original);
+                        });
+                    }
+                    ui.weak("Suggested wording only. The document text stays unchanged.");
+                }
                 let note = self.editor.draft.as_mut().unwrap();
                 let Kind::Note { text } = &mut note.kind else {
                     return;
@@ -216,7 +381,7 @@ impl Viewer {
         }
     }
 
-    fn commit_note_draft(
+    pub(super) fn commit_note_draft(
         &mut self,
         selected: &Annotation,
         focus: Option<egui::Id>,
@@ -378,7 +543,7 @@ mod tests {
     }
 
     #[test]
-    fn saved_note_click_reveals_full_contents_in_read_annotate_and_edit() {
+    fn saved_note_click_reveals_full_contents_except_in_document_edit_mode() {
         for editable in [true, false] {
             for mode in [Mode::Read, Mode::Annotate, Mode::Edit] {
                 let (mut app, ctx, note) = fixture(editable);
@@ -392,10 +557,19 @@ mod tests {
                 for _ in 0..3 {
                     frame(&mut app, &ctx, vec![]);
                 }
-                let output = click(&mut app, &ctx, pos2(152., 152.));
+                click(&mut app, &ctx, pos2(152., 152.));
+                if mode == Mode::Edit {
+                    assert!(app.tabs[0].selected_annotation.is_none());
+                    assert_eq!(app.editor.mode, Mode::Edit);
+                    assert_eq!(app.tabs[0].session.as_ref().unwrap().revision(), revision);
+                    continue;
+                }
                 assert!(
-                    app.inspector && !app.translation.open && !app.signature_panel_open(),
-                    "reader must win panel precedence in {mode:?}"
+                    app.editor.note_popup.is_some()
+                        && !app.inspector
+                        && !app.translation.open
+                        && !app.signature_panel_open(),
+                    "note popover must win panel precedence in {mode:?}"
                 );
                 assert_eq!(
                     app.tabs[0].selected_annotation.as_deref(),
@@ -409,6 +583,10 @@ mod tests {
                         mode
                     }
                 );
+                // A compact popover scrolls long content; opening the panel
+                // must expose the complete saved text without changing it.
+                assert!(app.open_note_reader(app.tabs[0].id, &note.id));
+                let output = frame(&mut app, &ctx, vec![]);
                 let text = note.kind.text().unwrap();
                 assert!(
                     visible_text(&output, text),
@@ -608,9 +786,49 @@ mod tests {
             false,
             &mut app.status,
         );
+        for _ in 0..3 {
+            frame(&mut app, &ctx, vec![]);
+        }
         let output = frame(&mut app, &ctx, vec![]);
-        assert!(app.inspector && !app.translation.open);
+        assert!(app.editor.note_popup.is_some() && !app.inspector && !app.translation.open);
         assert_eq!(app.tabs[0].selected_annotation.as_ref(), Some(&note.id));
         assert!(visible_text(&output, "New comment"));
+    }
+    #[test]
+    fn popover_outside_click_only_dismisses_then_second_click_opens_note() {
+        let (mut app, ctx, note) = fixture(true);
+        app.editor.mode = Mode::Annotate;
+        app.inspector = false;
+        for _ in 0..3 {
+            frame(&mut app, &ctx, vec![]);
+        }
+        click(&mut app, &ctx, pos2(152., 152.));
+        assert!(app.editor.note_popup.is_some());
+        let count = app.tabs[0].session.as_ref().unwrap().annotations.len();
+        click(&mut app, &ctx, pos2(152., 152.));
+        assert!(app.editor.note_popup.is_none());
+        assert!(app.tabs[0].selected_annotation.is_none());
+        assert_eq!(
+            app.tabs[0].session.as_ref().unwrap().annotations.len(),
+            count
+        );
+        click(&mut app, &ctx, pos2(152., 152.));
+        assert_eq!(app.tabs[0].selected_annotation.as_ref(), Some(&note.id));
+        assert!(app.editor.note_popup.is_some());
+    }
+    #[test]
+    fn recording_commit_failure_keeps_audio_for_retry_without_microphone_access() {
+        let (mut app, _, note) = fixture(false);
+        let clip = mypdf_milestone0::voice::Clip::from_samples(&[10, -20, 30]).unwrap();
+        app.editor.voice.pending_clip = Some((app.tabs[0].id, note.id, clip.clone()));
+        assert!(!app.finish_voice_recording());
+        assert_eq!(app.editor.voice.pending_clip.as_ref().unwrap().2, clip);
+        app.tabs[0].session.as_mut().unwrap().editable = true;
+        assert!(app.finish_voice_recording());
+        assert!(app.editor.voice.pending_clip.is_none());
+        assert_eq!(
+            app.tabs[0].session.as_ref().unwrap().annotations[0].voice,
+            Some(clip)
+        );
     }
 }

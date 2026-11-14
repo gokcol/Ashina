@@ -24,6 +24,60 @@ pub struct Replacement {
     pub format: crate::text_style::TextFormat,
 }
 
+/// Rotate edited document text as one content layer, in the same undoable edit.
+pub fn replace_rotated(
+    bytes: &[u8],
+    page: u32,
+    block: &Replacement,
+    rotation: f32,
+) -> Result<Vec<u8>> {
+    ensure!(rotation.is_finite(), "Invalid text rotation");
+    let doc = crate::content::editable(bytes)?;
+    let layer_id = if block.selection.runs.is_empty() && block.selection.annotations.len() == 1 {
+        let id = &block.selection.annotations[0].0;
+        crate::annotations::load(&doc)
+            .into_iter()
+            .find(|a| &a.id == id && a.object.text.is_some())
+            .map(|a| a.id)
+    } else {
+        None
+    };
+    let updated = if layer_id.is_some() || block.text.is_empty() {
+        replace(bytes, page, block)?
+    } else {
+        let mut empty = block.clone();
+        empty.text.clear();
+        empty.spans.clear();
+        empty.layout.clear();
+        let stripped = replace(bytes, page, &empty)?;
+        crate::text_layer::add(
+            &stripped,
+            page,
+            &block.text,
+            block.rect,
+            block.size,
+            block.color,
+            &block.format,
+            &block.spans,
+        )?
+    };
+    if block.text.is_empty() {
+        return Ok(updated);
+    }
+    let doc = crate::content::editable(&updated)?;
+    let mut marks = crate::annotations::load(&doc);
+    let target = if let Some(id) = layer_id {
+        marks.iter_mut().find(|a| a.id == id)
+    } else {
+        marks
+            .iter_mut()
+            .rev()
+            .find(|a| a.page + 1 == page as usize && a.object.text.is_some())
+    };
+    target.context("Edited text layer is missing")?.rotation = rotation;
+    crate::annotations::export(&updated, &marks)
+}
+
 pub fn replace(bytes: &[u8], page: u32, block: &Replacement) -> Result<Vec<u8>> {
     if block.selection.runs.is_empty() && block.selection.annotations.len() == 1 {
         let (id, expected) = &block.selection.annotations[0];

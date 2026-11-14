@@ -362,7 +362,7 @@ pub fn docx_text(bytes: &[u8]) -> Result<String> {
 }
 /// Break a line where it reaches the width: between words when it can, and
 /// inside a word only when that word alone is too wide. Leading spaces stay.
-fn wrap(line: &str, fits: impl Fn(&str) -> bool) -> Vec<String> {
+pub(crate) fn wrap(line: &str, fits: impl Fn(&str) -> bool) -> Vec<String> {
     let mut lines = vec![];
     let mut current = String::new();
     for word in line.split_inclusive(' ') {

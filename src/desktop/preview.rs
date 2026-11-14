@@ -957,7 +957,11 @@ fn capture_scene(collection: &str, theme: egui::Theme, root: Option<&std::path::
     }
     if collection.starts_with("Context") {
         use mypdf_milestone0::annotations::{Annotation, Kind};
-        app.editor.mode = editing::Mode::Edit;
+        app.editor.mode = if collection == "ContextImage" {
+            editing::Mode::Edit
+        } else {
+            editing::Mode::Annotate
+        };
         app.content = content::ContentState::new();
         let kind = if collection == "ContextImage" {
             Kind::Image {
@@ -2084,6 +2088,18 @@ fn text_layer_visual_preview() {
         &[],
     )
     .unwrap();
+    let transformed = std::env::var_os("MYPDF_PREVIEW_TRANSFORM_TEXT").is_some();
+    let pdf = if transformed {
+        let mut marks = annotations::load(&lopdf::Document::load_mem(&pdf).unwrap());
+        marks
+            .iter_mut()
+            .find(|a| a.object.text.is_some())
+            .unwrap()
+            .rotation = 27.8;
+        annotations::export(&pdf, &marks).unwrap()
+    } else {
+        pdf
+    };
     std::fs::write(root.join("layer-regression.pdf"), &pdf).unwrap();
     let ctx = egui::Context::default();
     let mut app = Viewer::new(&eframe::CreationContext::_new_kittest(ctx.clone()), vec![]);
@@ -2103,6 +2119,197 @@ fn text_layer_visual_preview() {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     preview.settle(&mut app, &ctx);
+    if transformed {
+        let id = egui::Id::new((app.tabs[0].id, 0_usize, "existing_text", 0_usize));
+        let pos = ctx
+            .read_response(id)
+            .expect("document text is selectable")
+            .rect
+            .center();
+        for pressed in [true, false] {
+            preview.capture_with(
+                &mut app,
+                &ctx,
+                vec![
+                    egui::Event::PointerMoved(pos),
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ],
+            );
+        }
+        for _ in 0..30 {
+            preview.capture(&mut app, &ctx);
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        preview.settle(&mut app, &ctx);
+    }
     let output = preview.capture(&mut app, &ctx);
     preview.save(&ctx, output, &root.join("text-above-image.png"));
+}
+
+#[test]
+#[ignore = "Renders the compact collection manager"]
+fn collection_manager_preview() {
+    let root = PathBuf::from(std::env::var_os("MYPDF_PREVIEW_DIR").expect("Set MYPDF_PREVIEW_DIR"));
+    std::fs::create_dir_all(&root).unwrap();
+    for (name, dark, size) in [
+        ("collections-light", false, vec2(1000., 820.)),
+        ("collections-dark", true, vec2(1000., 820.)),
+        ("collections-compact", false, vec2(720., 540.)),
+    ] {
+        let ctx = egui::Context::default();
+        let mut app = Viewer::new(&eframe::CreationContext::_new_kittest(ctx.clone()), vec![]);
+        ctx.set_theme(if dark {
+            egui::ThemePreference::Dark
+        } else {
+            egui::ThemePreference::Light
+        });
+        app.editor.collections.open("Stamps");
+        let mut preview = Preview {
+            size: Some(size),
+            ..Default::default()
+        };
+        preview.settle(&mut app, &ctx);
+        for _ in 0..5 {
+            preview.capture(&mut app, &ctx);
+        }
+        let output = preview.capture(&mut app, &ctx);
+        preview.save(&ctx, output, &root.join(format!("{name}.png")));
+    }
+}
+
+#[test]
+#[ignore = "Renders voice comments and sharing-copy controls without opening audio devices"]
+fn voice_and_sharing_preview() {
+    let root = PathBuf::from(std::env::var_os("MYPDF_PREVIEW_DIR").expect("Set MYPDF_PREVIEW_DIR"));
+    std::fs::create_dir_all(&root).unwrap();
+    let ctx = egui::Context::default();
+    let mut app = Viewer::new(&eframe::CreationContext::_new_kittest(ctx.clone()), vec![]);
+    ctx.set_theme(egui::ThemePreference::Light);
+    app.open_memory(
+        PathBuf::from("Review.pdf"),
+        mypdf_milestone0::convert::blank(595., 842.).unwrap(),
+        &ctx,
+    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while app.tabs[0].session.is_none() {
+        app.events(&ctx);
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let mut note = mypdf_milestone0::annotations::Annotation::new(
+        0,
+        [60., 70., 88., 98.],
+        mypdf_milestone0::annotations::Kind::Note {
+            text: "Inspection feedback".into(),
+        },
+        mypdf_milestone0::annotations::Style::default(),
+    );
+    note.voice = Some(mypdf_milestone0::voice::Clip::from_samples(&vec![0; 16000]).unwrap());
+    app.tabs[0]
+        .session
+        .as_mut()
+        .unwrap()
+        .commit(vec![note.clone()])
+        .unwrap();
+    let id = app.tabs[0].id;
+    app.open_note_reader(id, &note.id);
+    app.home.visible = false;
+    let mut preview = Preview {
+        size: Some(vec2(1000., 760.)),
+        ..Default::default()
+    };
+    preview.settle(&mut app, &ctx);
+    let output = preview.capture(&mut app, &ctx);
+    preview.save(&ctx, output, &root.join("voice-note.png"));
+    app.request_sharing();
+    preview.settle(&mut app, &ctx);
+    let output = preview.capture(&mut app, &ctx);
+    preview.save(&ctx, output, &root.join("prepare-sharing.png"));
+    for (name, dark, size) in [
+        ("sharing-dark", true, vec2(1000., 760.)),
+        ("sharing-compact", false, vec2(720., 540.)),
+    ] {
+        ctx.set_theme(if dark {
+            egui::ThemePreference::Dark
+        } else {
+            egui::ThemePreference::Light
+        });
+        preview.size = Some(size);
+        for _ in 0..5 {
+            preview.capture(&mut app, &ctx);
+        }
+        let output = preview.capture(&mut app, &ctx);
+        preview.save(&ctx, output, &root.join(format!("{name}.png")));
+    }
+}
+
+#[test]
+#[ignore = "Renders the Note popover and a PDF review summary"]
+fn review_tools_preview() {
+    let root = PathBuf::from(std::env::var_os("MYPDF_PREVIEW_DIR").unwrap());
+    std::fs::create_dir_all(&root).unwrap();
+    assert!(std::env::var_os("MYPDF_DATA_DIR").is_some());
+    let ctx = egui::Context::default();
+    let mut app = Viewer::new(&eframe::CreationContext::_new_kittest(ctx.clone()), vec![]);
+    ctx.set_theme(egui::ThemePreference::Light);
+    app.open_memory(
+        PathBuf::from("Review.pdf"),
+        mypdf_milestone0::convert::text_to_pdf(
+            "Design review\nPlease review the highlighted section.",
+            false,
+        )
+        .unwrap(),
+        &ctx,
+    );
+    let mut preview = Preview {
+        size: Some(vec2(1100., 800.)),
+        ..Default::default()
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while app.tabs[0].session.is_none() {
+        app.events(&ctx);
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    use mypdf_milestone0::annotations::{Annotation, Kind, Shape, Style};
+    let note=Annotation::new(0,[75.,130.,99.,154.],Kind::Note{text:"Could we clarify this section before approval?\n\nPlease keep the original document wording for now.".into()},Style::default());
+    let cloud = Annotation::new(
+        0,
+        [110., 110., 350., 220.],
+        Kind::Shape {
+            shape: Shape::Cloud,
+        },
+        Style::default(),
+    );
+    app.tabs[0]
+        .session
+        .as_mut()
+        .unwrap()
+        .commit(vec![note.clone(), cloud])
+        .unwrap();
+    app.home.visible = false;
+    app.editor.mode = editing::Mode::Annotate;
+    preview.settle(&mut app, &ctx);
+    preview.capture_with(
+        &mut app,
+        &ctx,
+        vec![egui::Event::PointerMoved(pos2(300., 300.))],
+    );
+    app.editor.note_requested = Some((app.tabs[0].id, note.id));
+    for _ in 0..5 {
+        preview.capture(&mut app, &ctx);
+    }
+    let output = preview.capture(&mut app, &ctx);
+    preview.save(&ctx, output, &root.join("note-popover.png"));
+    let bytes = std::fs::read("/tmp/mypdf-review-summary-test.pdf").unwrap();
+    let (size, pixels) = mypdf_milestone0::viewer::render_page(&bytes, 0, 1.4).unwrap();
+    image::RgbaImage::from_raw(size[0] as u32, size[1] as u32, pixels)
+        .unwrap()
+        .save(root.join("review-summary.png"))
+        .unwrap();
 }

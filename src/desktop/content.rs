@@ -25,7 +25,18 @@ enum InlineTarget {
     Block(Box<BlockDraft>),
 }
 #[derive(Clone, PartialEq, Debug)]
+struct TextFit {
+    text: String,
+    spans: Vec<mypdf_milestone0::rich_text::Span>,
+    width: f32,
+    height: f32,
+}
+#[derive(Clone, PartialEq, Debug)]
 struct BlockDraft {
+    rotation: f32,
+    initial_rotation: f32,
+    fit: Option<TextFit>,
+    transformed: Option<mypdf_milestone0::annotations::Annotation>,
     selection: text_block::Selection,
     masks: Vec<[f32; 4]>,
     spans: Vec<mypdf_milestone0::rich_text::Span>,
@@ -36,7 +47,7 @@ struct BlockDraft {
     alignment: Alignment,
     initial_alignment: Alignment,
     /// Font, size, color and right edge when the block opened.
-    initial: (usize, f32, [f32; 3], f32),
+    initial: (usize, f32, [f32; 3], f32, f32),
     initial_origin: [f32; 2],
     layout: Vec<mypdf_milestone0::rich_text::LineLayout>,
     preserve_layout: bool,
@@ -65,12 +76,106 @@ struct ImageGesture {
     handle: i8,
 }
 impl InlineText {
+    fn layer_preview(&self) -> Option<mypdf_milestone0::annotations::Annotation> {
+        let InlineTarget::Block(block) = &self.target else {
+            return None;
+        };
+        let mut a = block.transformed.clone().unwrap_or_else(|| {
+            mypdf_milestone0::annotations::Annotation::new(
+                self.key.2,
+                self.rect,
+                mypdf_milestone0::annotations::Kind::Text {
+                    text: self.text.clone(),
+                },
+                Default::default(),
+            )
+        });
+        a.rotation = block.rotation;
+        a.rect = self.rect;
+        a.kind = mypdf_milestone0::annotations::Kind::Text {
+            text: self.text.clone(),
+        };
+        a.style.font_size = self.size;
+        a.style.color = self.color;
+        a.object.text = Some(mypdf_milestone0::text_layer::TextLayer {
+            base_size: self.size,
+            base_color: self.color,
+            spans: block.spans.clone(),
+            alignment: block.alignment,
+        });
+        Some(a)
+    }
+
+    fn transformed_preview(&self) -> Option<mypdf_milestone0::annotations::Annotation> {
+        self.layer_preview()
+            .filter(|a| a.rotation.rem_euclid(360.) != 0. || a.flip_x || a.flip_y)
+    }
+
+    /// Fit transformed text before painting and before a same-frame commit.
+    fn fit_transformed_text(&mut self, ctx: &egui::Context) {
+        let InlineTarget::Block(block) = &mut self.target else {
+            return;
+        };
+        if block.preserve_layout && block.rotation == 0. {
+            return;
+        }
+        block.spans =
+            mypdf_milestone0::rich_text::edited(&block.styled_text, &self.text, &block.spans);
+        block.styled_text = self.text.clone();
+        let layout_changed = self.text != self.original
+            || block.rotation != block.initial_rotation
+            || block.spans != block.initial_spans
+            || ((self.rect[2] - self.rect[0]) - (block.initial.3 - block.initial_origin[0])).abs()
+                > 0.001
+            || block.fit.is_some();
+        if !layout_changed {
+            return;
+        }
+        let width = self.rect[2] - self.rect[0];
+        if block.fit.as_ref().is_none_or(|fit| {
+            fit.text != self.text || fit.spans != block.spans || (fit.width - width).abs() > 0.001
+        }) {
+            let height =
+                mypdf_milestone0::rich_text::required_height(&self.text, width, &block.spans)
+                    .unwrap_or(0.);
+            block.fit = Some(TextFit {
+                text: self.text.clone(),
+                spans: block.spans.clone(),
+                width,
+                height,
+            });
+        }
+        let pdf_height = block.fit.as_ref().map_or(0., |fit| fit.height);
+        let Some(mut a) = self.layer_preview() else {
+            return;
+        };
+        let galley = annotation_render::layer_layout(ctx, &a, &self.text, 1.);
+        let required = text_layout_height(&galley, 1., self.size).max(pdf_height);
+        if (required - (self.rect[3] - self.rect[1])).abs() < 0.01 {
+            return;
+        }
+        // Growing around the rotation center would shift the first line.
+        // Translate the enlarged local box to retain its painted origin.
+        let origin = a.rotated([a.rect[0], a.rect[1]]);
+        a.rect[3] = a.rect[1] + required;
+        let grown_origin = a.rotated([a.rect[0], a.rect[1]]);
+        for i in 0..4 {
+            a.rect[i] += origin[i % 2] - grown_origin[i % 2];
+        }
+        self.rect = a.rect;
+    }
+
+    fn bounds(&self) -> [f32; 4] {
+        self.transformed_preview().map_or(self.rect, |a| a.bounds())
+    }
+
     /// Whether committing would change the document. An untouched block is
     /// closed as it is rather than rewritten with uniform formatting.
     fn changed(&self) -> bool {
         self.text != self.original
             || matches!(&self.target, InlineTarget::Block(b)
-                if self.rect[2] != b.initial.3
+                if self.rect[2] != b.initial.3 || self.rect[3] != b.initial.4
+                    || b.rotation != b.initial_rotation
                     || b.spans != b.initial_spans
                     || b.layout != b.initial_layout
                     || [self.rect[0], self.rect[1]] != b.initial_origin
@@ -131,6 +236,7 @@ pub(super) enum Edit {
         base: mypdf_milestone0::tables::Table,
     },
     Block {
+        rotation: Option<f32>,
         page: u32,
         block: text_block::Replacement,
     },
@@ -237,10 +343,9 @@ pub(super) struct ContentState {
     show_text_inspector: bool,
     focus_new_text: bool,
     new_rect: [f32; 4],
-    new_auto_height: bool,
+    new_fit: Option<TextFit>,
     pub(super) layout_guides: bool,
     new_initial_rect: Option<[f32; 4]>,
-    new_drag: Option<[f32; 4]>,
     new_size: f32,
     new_color: [f32; 3],
     new_font: usize,
@@ -409,7 +514,7 @@ impl ContentState {
         self.new_spans.clear();
         self.new_selection = None;
         self.new_initial_rect = None;
-        self.new_auto_height = true;
+        self.new_fit = None;
     }
     fn sync_new_styles(&mut self) {
         let fallback = formatting::span(
@@ -426,29 +531,14 @@ impl ContentState {
         );
     }
     fn fit_new_text_height(&mut self, galley: &egui::Galley, scale: f32, page_height: f32) {
-        // Screen rows snap to pixels; PDF export uses unrounded line spacing.
-        // Accommodate both without reserving an extra line below the text.
-        let first_line = galley
-            .job
-            .sections
-            .first()
-            .map_or(self.new_size * scale * 1.3, |s| {
-                s.format.line_height.unwrap_or(s.format.font_id.size * 1.3)
-            });
-        let logical_height: f32 = galley
-            .rows
-            .iter()
-            .map(|row| {
-                row.glyphs
-                    .iter()
-                    .map(|glyph| glyph.line_height)
-                    .fold(first_line, f32::max)
-            })
-            .sum();
-        let required = (galley.size().y.max(logical_height) / scale * 64.).ceil() / 64.;
-        if self.new_auto_height || required > self.new_rect[3] {
-            self.new_rect[3] = required.min((page_height - self.new_rect[1]).max(0.));
-        }
+        let pdf_height = cached_text_height(
+            &mut self.new_fit,
+            &self.new_text,
+            &self.new_spans,
+            self.new_rect[2],
+        );
+        let required = text_layout_height(galley, scale, self.new_size).max(pdf_height);
+        self.new_rect[3] = required.min((page_height - self.new_rect[1]).max(0.));
     }
     fn match_surrounding(&mut self) -> bool {
         let Some(info) = self
@@ -849,10 +939,9 @@ impl ContentState {
             show_text_inspector: false,
             focus_new_text: false,
             new_rect: [48., 48., 300., 120.],
-            new_auto_height: true,
+            new_fit: None,
             layout_guides: false,
             new_initial_rect: None,
-            new_drag: None,
             new_size: 18.,
             new_color: [0.13, 0.15, 0.2],
             new_font: 0,
@@ -1531,7 +1620,10 @@ impl Viewer {
                         Edit::TableWrite { page, table } => mypdf_milestone0::tables::write(&bytes, page, &table)?,
                         Edit::TableDelete {page,table} => mypdf_milestone0::tables::delete(&bytes,page,&table)?,
                         Edit::TableCells { page, table, base } => mypdf_milestone0::tables::edit_detected(&bytes,page,&table,&base)?,
-                        Edit::Block { page, block } => text_block::replace(&bytes, page, &block)?,
+                        Edit::Block { page, block, rotation } => match rotation {
+                            Some(rotation) => text_block::replace_rotated(&bytes, page, &block, rotation)?,
+                            None => text_block::replace(&bytes, page, &block)?,
+                        },
                         Edit::Redact { areas, options } => {
                             let (bytes, r) =
                                 mypdf_milestone0::redact::apply(&bytes, &areas, &options)?;
@@ -2020,14 +2112,10 @@ impl Viewer {
                 if self.content.new_placed {
                     egui::CollapsingHeader::new("Position & size").show(ui,|ui| {
                         if let Some(page) = self.tabs.get(self.active).and_then(|t| t.pages.get(t.page)) {
-                            ui.checkbox(&mut self.content.new_auto_height, "Fit height to text");
-                            for (index, name) in ["Left", "Top", "Width", "Height"].into_iter().enumerate() {
-                                let before = self.content.new_rect[index];
+                            ui.weak(format!("Height: {:.1} pt · Auto", self.content.new_rect[3]));
+                            for (index, name) in ["Left", "Top", "Width"].into_iter().enumerate() {
                                 let max = match index { 0 => (page.width-self.content.new_rect[2]).max(0.), 1 => (page.height-self.content.new_rect[3]).max(0.), 2 => (page.width-self.content.new_rect[0]).max(10.), _ => (page.height-self.content.new_rect[1]).max(4.) };
                                 editing::property_slider(ui, name, &mut self.content.new_rect[index], (if index == 2 {10.} else if index == 3 {4.} else {0.})..=max, " pt");
-                                if index == 3 && before != self.content.new_rect[index] {
-                                    self.content.new_auto_height = false;
-                                }
                             }
                         }
                     });
@@ -2038,7 +2126,7 @@ impl Viewer {
                 }
             });
             ui.add_space(8.);
-            ui.label(RichText::new(if self.content.new_placed { "Type on the page. Drag the top handle to move; drag the circles to resize. Click elsewhere, press Esc or ⌘Return to finish." } else { "Click existing text to edit it, or click blank space to add text. Clicking outside finishes the current edit; click again to begin another." }).size(12.).color(theme::muted()));
+            ui.label(RichText::new(if self.content.new_placed { "Type on the page. Drag inside the box to move; drag the side circles to change width. Height follows the lines. Hold Shift while dragging to select text. Click elsewhere, press Esc or ⌘Return to finish." } else { "Click existing text to edit it, or click blank space to add text. Clicking outside finishes the current edit; click again to begin another." }).size(12.).color(theme::muted()));
             if self.content.pending_text_hit.is_some() { ui.spinner(); ui.label("Detecting text…"); }
             if let Some(hint) = &self.content.selection_hint { ui.label(RichText::new(hint).small().color(theme::muted())); }
             });
@@ -2398,6 +2486,8 @@ impl Viewer {
                         ui.add_space(16.);
                         ui.separator();
                         ui.add_space(8.);
+                        if ui.add_enabled(ready, ActionButton::new(Icon::Shield, "Prepare for sharing…")).clicked() { action = "sharing"; }
+                        ui.add_space(8.);
                         ui.collapsing("More PDF tools", |ui| {
                             ui.label(RichText::new("Create a PDF").family(ui::semibold()));
                             for (icon, label, key) in [(Icon::Plus, "New blank PDF", "blank"), (Icon::Import, "Images to PDF…", "images"), (Icon::Text, "Markdown / Word to PDF…", "document")] {
@@ -2422,6 +2512,7 @@ impl Viewer {
                 });
             });
         match action {
+            "sharing" => self.request_sharing(),
             "shrink" => self.request_shrink(),
             "ocr" => self.request_ocr(),
             "blank" => self.new_blank(ctx),
@@ -2680,6 +2771,9 @@ impl Viewer {
         }
     }
     fn finish_existing_text(&mut self, ctx: &egui::Context) {
+        if let Some(draft) = &mut self.content.existing {
+            draft.fit_transformed_text(ctx);
+        }
         let Some(draft) = self.content.existing.clone() else {
             return;
         };
@@ -2707,6 +2801,8 @@ impl Viewer {
                     self.content_change(
                         ctx,
                         Edit::Block {
+                            rotation: (block.rotation != block.initial_rotation)
+                                .then_some(block.rotation),
                             page: draft.key.2 as u32 + 1,
                             block: text_block::Replacement {
                                 layout: if block.preserve_layout
@@ -2873,6 +2969,8 @@ impl Viewer {
                                 formatting::panel(ui, &draft.text, &mut block.spans, &block.selected_chars,
                                     &mut block.font, &mut draft.size, &mut draft.color, &mut block.alignment);
                                 if old_alignment != block.alignment { block.preserve_layout = false; }
+                                ui.add_space(12.);
+                                text_rotation_controls(ui, &mut block.rotation);
                                 ui.add_space(8.);
                                 if ui.add_enabled(!block.layout.is_empty(), egui::Checkbox::new(&mut block.preserve_layout, "Preserve original line spacing")).changed() && block.preserve_layout {
                                     block.alignment = Alignment::Left;
@@ -2916,13 +3014,20 @@ impl Viewer {
                                     ui.weak(format!("Height: {height:.1} pt · Auto"));
                                     if changed { draft.rect = [x, y, (x+width).min(page.width), (y+height).min(page.height)]; }
                                 }
-                                ui.label(RichText::new("Narrower widths wrap long lines. Height grows as you type.").small().color(theme::muted()));
+                                ui.label(RichText::new("Narrower widths wrap long lines. Height grows and shrinks with the lines.").small().color(theme::muted()));
                                 ui.add_space(8.);
 
                             });
                         } else {
                             ui.label(RichText::new(&draft.font).color(theme::muted()));
                             ui.label(RichText::new(format!("{:.1} pt", draft.size)).color(theme::muted()));
+                            let mut rotation = 0.;
+                            if text_rotation_controls(ui, &mut rotation) && let Some(page) = page_size
+                                && let Some(mut replacement) = selected_block(vec![draft.clone()], draft.rect, page) {
+                                if let InlineTarget::Block(block) = &mut replacement.target { block.rotation = rotation; }
+                                replacement.focus = false;
+                                *draft = replacement;
+                            }
                         }
                         ui.add_space(18.);
                         ui.add_enabled_ui(!self.content.busy, |ui| {
@@ -2932,7 +3037,7 @@ impl Viewer {
                             });
                         });
                         ui.add_space(14.);
-                        ui.label(RichText::new("Type on the page. Drag the handle or use arrow keys to move. Click outside, press Esc or ⌘Return to finish.").size(12.).color(theme::muted()));
+                        ui.label(RichText::new("Type on the page. Drag inside the box to move. Shift-drag selects text. Click outside, press Esc or ⌘Return to finish.").size(12.).color(theme::muted()));
                     } else {
                         let empty = !has_text_layer && self.content.inspection.as_ref().is_some_and(|info| info.text.as_ref().is_ok_and(|runs| runs.is_empty()));
                         if empty {
@@ -3012,11 +3117,15 @@ fn annotation_candidate(a: &mypdf_milestone0::annotations::Annotation, key: Key)
             })
             .unwrap_or(0);
         InlineTarget::Block(Box::new(BlockDraft {
+            fit: None,
+            rotation: a.rotation,
+            initial_rotation: a.rotation,
+            transformed: Some(a.clone()),
             selection: text_block::Selection {
                 runs: vec![],
                 annotations: vec![(a.id.clone(), text.clone())],
             },
-            masks: vec![a.rect],
+            masks: vec![a.bounds()],
             initial_spans: spans.clone(),
             spans,
             styled_text: text.clone(),
@@ -3024,7 +3133,7 @@ fn annotation_candidate(a: &mypdf_milestone0::annotations::Annotation, key: Key)
             font,
             alignment: layer.alignment,
             initial_alignment: layer.alignment,
-            initial: (font, a.style.font_size, a.style.color, a.rect[2]),
+            initial: (font, a.style.font_size, a.style.color, a.rect[2], a.rect[3]),
             initial_origin: [a.rect[0], a.rect[1]],
             layout: vec![],
             initial_layout: vec![],
@@ -3039,7 +3148,11 @@ fn annotation_candidate(a: &mypdf_milestone0::annotations::Annotation, key: Key)
         geometry: None,
         original: text.clone(),
         text,
-        rect: a.bounds(),
+        rect: if a.object.text.is_some() {
+            a.rect
+        } else {
+            a.bounds()
+        },
         size: a.style.font_size,
         color: a.style.color,
         font: "Text box".into(),
@@ -3102,9 +3215,11 @@ fn selected_block(
 ) -> Option<InlineText> {
     if items.is_empty()
         || items.iter().any(|item| {
-            item.geometry
-                .as_ref()
-                .is_some_and(|g| g.direction[0] < 0.999 || g.direction[1].abs() > 0.01)
+            item.transformed_preview().is_some()
+                || item
+                    .geometry
+                    .as_ref()
+                    .is_some_and(|g| g.direction[0] < 0.999 || g.direction[1].abs() > 0.01)
         })
     {
         // The positioned editor works in horizontal page coordinates. Keep
@@ -3252,6 +3367,10 @@ fn selected_block(
         key: first.key,
         geometry: None,
         target: InlineTarget::Block(Box::new(BlockDraft {
+            fit: None,
+            rotation: 0.,
+            initial_rotation: 0.,
+            transformed: None,
             selection,
             masks,
             initial_spans: spans.clone(),
@@ -3261,7 +3380,7 @@ fn selected_block(
             font,
             alignment: Alignment::Left,
             initial_alignment: Alignment::Left,
-            initial: (font, size, first.color, right),
+            initial: (font, size, first.color, right, bottom),
             initial_origin: [x, y],
             initial_layout: layout.clone(),
             layout,
@@ -3390,40 +3509,496 @@ fn text_move_start(ui: &egui::Ui, response: &egui::Response) -> Option<egui::Pos
     })
 }
 
-/// Keep a text block's drag handle on the page, outside its editable text.
-fn text_move_handle(rect: Rect, page: Rect) -> Rect {
-    let y = if rect.top() - 16. >= page.top() {
-        rect.top() - 9.
-    } else if rect.bottom() + 16. <= page.bottom() {
-        rect.bottom() + 9.
-    } else {
-        (rect.top() + 9.).min(page.bottom() - 6.)
-    };
-    let width = 40_f32.min(page.width().max(0.));
-    let height = 12_f32.min(page.height().max(0.));
-    Rect::from_center_size(
-        pos2(
-            rect.center()
-                .x
-                .clamp(page.left() + width / 2., page.right() - width / 2.),
-            y.clamp(page.top() + height / 2., page.bottom() - height / 2.),
-        ),
-        vec2(width, height),
-    )
+#[derive(Clone, Copy)]
+struct TextBodyGesture {
+    origin: egui::Pos2,
+    dragging: bool,
 }
 
-fn paint_text_move_handle(painter: &egui::Painter, rect: Rect) {
-    painter.rect_filled(rect, 6., theme::paper());
-    painter.rect_stroke(
-        rect,
-        6.,
+/// A click still places the caret. A deliberate body drag moves the box;
+/// Shift-drag retains character selection in the inline editor.
+fn text_body_move(
+    ui: &egui::Ui,
+    id: egui::Id,
+    rect: Rect,
+    can_start: bool,
+) -> Option<(egui::Pos2, bool)> {
+    let (press, origin, pointer, down, released, shift) = ui.input(|i| {
+        (
+            i.events.iter().find_map(|e| match e {
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    ..
+                } => Some(*pos),
+                _ => None,
+            }),
+            i.pointer.press_origin(),
+            i.pointer.interact_pos(),
+            i.pointer.primary_down(),
+            i.pointer.primary_released(),
+            i.modifiers.shift,
+        )
+    });
+    let mut gesture = ui.data(|d| d.get_temp::<TextBodyGesture>(id));
+    if press.is_some() {
+        gesture = None;
+    }
+    if gesture.is_none()
+        && can_start
+        && !shift
+        && (down || released)
+        && !egui::Popup::is_any_open(ui.ctx())
+        && let Some(origin) = press.or(origin)
+        && rect.contains(origin)
+        && ui.clip_rect().contains(origin)
+        && ui.is_enabled()
+        && ui.ctx().layer_id_at(origin) == Some(ui.layer_id())
+    {
+        gesture = Some(TextBodyGesture {
+            origin,
+            dragging: false,
+        });
+    }
+    let result = gesture.as_mut().and_then(|g| {
+        let started = !g.dragging && pointer.is_some_and(|p| p.distance(g.origin) >= 4.);
+        g.dragging |= started;
+        g.dragging.then_some((g.origin, started))
+    });
+    ui.data_mut(|d| {
+        if down && let Some(g) = gesture {
+            d.insert_temp(id, g);
+        } else {
+            d.remove::<TextBodyGesture>(id);
+        }
+    });
+    result
+}
+
+fn cached_text_height(
+    cache: &mut Option<TextFit>,
+    text: &str,
+    spans: &[mypdf_milestone0::rich_text::Span],
+    width: f32,
+) -> f32 {
+    if cache.as_ref().is_none_or(|fit| {
+        fit.text != text || fit.spans != spans || (fit.width - width).abs() > 0.001
+    }) {
+        *cache = Some(TextFit {
+            text: text.into(),
+            spans: spans.to_vec(),
+            width,
+            height: mypdf_milestone0::rich_text::required_height(text, width, spans).unwrap_or(0.),
+        });
+    }
+    cache.as_ref().map_or(0., |fit| fit.height)
+}
+
+#[derive(Clone)]
+struct TextWidthGesture {
+    original: mypdf_milestone0::annotations::Annotation,
+    pointer: egui::Pos2,
+}
+
+fn text_width_centers(
+    a: &mypdf_milestone0::annotations::Annotation,
+    page: Rect,
+    scale: f32,
+) -> [egui::Pos2; 2] {
+    [a.rect[0], a.rect[2]].map(|x| {
+        let p = a.rotated([x, (a.rect[1] + a.rect[3]) / 2.]);
+        page.min + vec2(p[0], p[1]) * scale
+    })
+}
+
+fn resized_text_width(
+    a: &mypdf_milestone0::annotations::Annotation,
+    delta: egui::Vec2,
+    edge: usize,
+    max_width: f32,
+) -> [f32; 4] {
+    let (sin, cos) = a.rotation.to_radians().sin_cos();
+    let dx = (delta.x * cos + delta.y * sin) * if a.flip_x { -1. } else { 1. };
+    let width =
+        ((a.rect[2] - a.rect[0]) + if edge == 0 { -dx } else { dx }).clamp(10., max_width.max(10.));
+    let fixed_x = if edge == 0 { a.rect[2] } else { a.rect[0] };
+    let anchor = a.rotated([fixed_x, a.rect[1]]);
+    let mut out = a.clone();
+    out.rect[2] = out.rect[0] + width;
+    let fixed_x = if edge == 0 { out.rect[2] } else { out.rect[0] };
+    let next = out.rotated([fixed_x, out.rect[1]]);
+    for i in 0..4 {
+        out.rect[i] += anchor[i % 2] - next[i % 2];
+    }
+    out.rect
+}
+
+fn text_width_cursor(rotation: f32) -> egui::CursorIcon {
+    let angle = rotation.rem_euclid(180.);
+    if !(22.5..157.5).contains(&angle) {
+        egui::CursorIcon::ResizeHorizontal
+    } else if angle < 67.5 {
+        egui::CursorIcon::ResizeNwSe
+    } else if angle < 112.5 {
+        egui::CursorIcon::ResizeVertical
+    } else {
+        egui::CursorIcon::ResizeNeSw
+    }
+}
+
+fn text_width_interaction(
+    ui: &egui::Ui,
+    a: &mypdf_milestone0::annotations::Annotation,
+    page: Rect,
+    scale: f32,
+    id: egui::Id,
+) -> (Option<[f32; 4]>, bool) {
+    let mut result = None;
+    let mut owns = false;
+    let cursor = text_width_cursor(a.rotation);
+    for (edge, center) in text_width_centers(a, page, scale).into_iter().enumerate() {
+        let id = id.with(edge);
+        let response = ui
+            .interact(
+                Rect::from_center_size(center, vec2(ui::target_size(18.), ui::target_size(18.))),
+                id,
+                egui::Sense::drag(),
+            )
+            .on_hover_cursor(cursor)
+            .on_hover_text("Resize text width; height follows the lines");
+        let press = ui.input(|i| {
+            i.events.iter().find_map(|event| match event {
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    ..
+                } => Some(*pos),
+                _ => None,
+            })
+        });
+        let over = |p: egui::Pos2| {
+            response.rect.contains(p)
+                && ui.clip_rect().contains(p)
+                && ui.ctx().layer_id_at(p) == Some(ui.layer_id())
+        };
+        let (down, hover_pos) = ui.input(|i| (i.pointer.primary_down(), i.pointer.hover_pos()));
+        let hover = !down && hover_pos.is_some_and(over);
+        let begin = press.filter(|p| {
+            over(*p)
+                && ui.is_enabled()
+                && !ui.input(|i| i.modifiers.shift)
+                && !egui::Popup::is_any_open(ui.ctx())
+        });
+        if let Some(pointer) = begin {
+            ui.ctx().set_dragged_id(id);
+            ui.data_mut(|d| {
+                d.insert_temp(
+                    id,
+                    TextWidthGesture {
+                        original: a.clone(),
+                        pointer,
+                    },
+                )
+            });
+        }
+        owns |= hover || begin.is_some();
+        if hover {
+            ui.ctx().set_cursor_icon(cursor);
+        }
+        if let Some(gesture) = ui.data(|d| d.get_temp::<TextWidthGesture>(id))
+            && let Some(pointer) = ui.input(|i| i.pointer.interact_pos())
+        {
+            result = Some(resized_text_width(
+                &gesture.original,
+                (pointer - gesture.pointer) / scale,
+                edge,
+                page.width().hypot(page.height()) / scale,
+            ));
+            owns = true;
+            ui.ctx().set_cursor_icon(cursor);
+        }
+        if !ui.input(|i| i.pointer.primary_down()) {
+            ui.data_mut(|d| d.remove::<TextWidthGesture>(id));
+        }
+    }
+    (result, owns)
+}
+
+fn paint_text_width_handles(
+    painter: &egui::Painter,
+    a: &mypdf_milestone0::annotations::Annotation,
+    page: Rect,
+    scale: f32,
+) {
+    for center in text_width_centers(a, page, scale) {
+        painter.circle_filled(center, theme::handle_radius(5.), Color32::WHITE);
+        painter.circle_stroke(
+            center,
+            theme::handle_radius(5.),
+            Stroke::new(1.5, theme::accent()),
+        );
+    }
+}
+
+fn paint_text_bounds(
+    painter: &egui::Painter,
+    a: &mypdf_milestone0::annotations::Annotation,
+    page: Rect,
+    scale: f32,
+) {
+    let [x, y, r, b] = a.rect;
+    let points = [[x, y], [r, y], [r, b], [x, b], [x, y]].map(|p| {
+        let p = a.rotated(p);
+        page.min + vec2(p[0], p[1]) * scale
+    });
+    painter.extend(egui::Shape::dashed_line(
+        &points,
         Stroke::new(1., theme::accent()),
-        egui::StrokeKind::Inside,
+        5.,
+        4.,
+    ));
+    paint_text_width_handles(painter, a, page, scale);
+}
+
+fn text_body_hit(
+    ui: &egui::Ui,
+    a: &mypdf_milestone0::annotations::Annotation,
+    page: Rect,
+    scale: f32,
+) -> bool {
+    ui.input(|i| {
+        i.events
+            .iter()
+            .find_map(|event| match event {
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    ..
+                } => Some(*pos),
+                _ => None,
+            })
+            .or(i.pointer.press_origin())
+            .or(i.pointer.interact_pos())
+    })
+    .is_some_and(|p| {
+        let q = (p - page.min) / scale;
+        a.contains([q.x, q.y])
+            && text_width_centers(a, page, scale)
+                .iter()
+                .all(|c| c.distance(p) > ui::target_size(9.))
+    })
+}
+
+/// Include unrounded PDF line advances and trailing blank lines, not only
+/// the screen glyph bounds. At reduced zoom those can be shorter than export.
+fn text_layout_height(galley: &egui::Galley, scale: f32, size: f32) -> f32 {
+    let first_line = galley.job.sections.first().map_or(size * scale * 1.3, |s| {
+        s.format.line_height.unwrap_or(s.format.font_id.size * 1.3)
+    });
+    let logical_height: f32 = galley
+        .rows
+        .iter()
+        .map(|row| {
+            row.glyphs
+                .iter()
+                .map(|glyph| glyph.line_height)
+                .fold(first_line, f32::max)
+        })
+        .sum();
+    (galley.size().y.max(logical_height) / scale * 64.).ceil() / 64.
+}
+
+fn text_rotation_controls(ui: &mut egui::Ui, rotation: &mut f32) -> bool {
+    let before = *rotation;
+    ui::caption(ui, "Rotation");
+    ui.horizontal(|ui| {
+        ui.add(
+            egui::DragValue::new(rotation)
+                .speed(1.)
+                .range(-180.0..=180.0)
+                .suffix("°"),
+        )
+        .widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::DragValue, true, "Text rotation angle")
+        });
+        for (label, delta) in [("−15°", -15.), ("+15°", 15.)] {
+            if ui.button(label).clicked() {
+                *rotation = (*rotation + delta + 180.).rem_euclid(360.) - 180.;
+            }
+        }
+        if ui
+            .add_enabled(
+                *rotation != 0.,
+                ActionButton::new(Icon::RotateLeft, "Reset rotation").compact(),
+            )
+            .clicked()
+        {
+            *rotation = 0.;
+        }
+    });
+    *rotation != before
+}
+
+/// TextEdit owns keyboard/clipboard/undo; pointer hit-testing and its visible
+/// caret use the text's actual rotation/reflection rather than its outer bounds.
+#[allow(clippy::too_many_arguments)]
+fn transformed_text_input(
+    ui: &mut egui::Ui,
+    draft: &mut InlineText,
+    a: &mypdf_milestone0::annotations::Annotation,
+    page: Rect,
+    scale: f32,
+    id: egui::Id,
+    dragging: bool,
+) -> egui::text_edit::TextEditOutput {
+    let resolution = annotation_render::text_resolution(scale);
+    let b = a.bounds();
+    let rect = Rect::from_min_max(
+        page.min + vec2(b[0], b[1]) * scale,
+        page.min + vec2(b[2], b[3]) * scale,
     );
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+    child.set_clip_rect(rect.intersect(page).intersect(ui.clip_rect()));
+    child.set_opacity(0.);
+    // Suppress only TextEdit's axis-aligned pointer mapping. Restore the exact
+    // original pointer before the rest of the page handles input this frame.
+    let pointer = ui.input_mut(|i| std::mem::take(&mut i.pointer));
+    let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, _width: f32| {
+        annotation_render::layer_layout(ui.ctx(), a, text.as_str(), resolution)
+    };
+    let mut output = egui::TextEdit::multiline(&mut draft.text)
+        .id(id)
+        .frame(false)
+        .margin(0.)
+        .desired_width(rect.width())
+        .min_size(rect.size())
+        .char_limit(32768)
+        .layouter(&mut layouter)
+        .show(&mut child);
+    ui.input_mut(|i| i.pointer = pointer);
+    if !dragging && let Some(pos) = ui.input(|i| i.pointer.interact_pos()) {
+        let p = (pos - page.min) / scale;
+        let mut p = mypdf_milestone0::annotations::rotate([p.x, p.y], a.rect, -a.rotation);
+        if a.flip_x {
+            p[0] = a.rect[0] + a.rect[2] - p[0];
+        }
+        if a.flip_y {
+            p[1] = a.rect[1] + a.rect[3] - p[1];
+        }
+        let cursor = output.galley.cursor_from_pos(
+            vec2(p[0] - a.rect[0], p[1] - a.rect[1]) * resolution
+                + vec2(output.galley.rect.min.x, 0.),
+        );
+        let selecting = ui.input(|i| i.modifiers.shift && i.pointer.primary_down())
+            && ui.ctx().is_being_dragged(id);
+        if output.state.cursor.pointer_interaction(
+            ui,
+            &output.response,
+            cursor,
+            &output.galley,
+            selecting,
+        ) {
+            output.cursor_range = output.state.cursor.char_range();
+            output.state.clone().store(ui.ctx(), id);
+            output.response.request_focus();
+        }
+    }
+    if draft.focus && !dragging {
+        output.response.request_focus();
+        draft.focus = false;
+    }
+    output
+}
+
+fn paint_transformed_cursor(
+    _ui: &egui::Ui,
+    painter: &egui::Painter,
+    a: &mypdf_milestone0::annotations::Annotation,
+    output: &egui::text_edit::TextEditOutput,
+    page: Rect,
+    scale: f32,
+) {
+    if !output.response.has_focus() {
+        return;
+    }
+    let Some(range) = output
+        .cursor_range
+        .or_else(|| output.state.cursor.char_range())
+    else {
+        return;
+    };
+    let resolution = annotation_render::text_resolution(scale);
+    let point = |p: egui::Pos2| {
+        let p = a.rotated([
+            a.rect[0] + (p.x - output.galley.rect.min.x) / resolution,
+            a.rect[1] + p.y / resolution,
+        ]);
+        page.min + vec2(p[0], p[1]) * scale
+    };
+    let [lo, hi] = range.sorted_cursors();
+    if lo.index != hi.index {
+        let mut rows: Vec<Rect> = vec![];
+        for index in lo.index..hi.index {
+            let start = output
+                .galley
+                .pos_from_cursor(egui::text::CCursor::new(index));
+            let end = output
+                .galley
+                .pos_from_cursor(egui::text::CCursor::new(index + 1));
+            let rect = Rect::from_min_max(
+                start.min,
+                pos2(
+                    if (start.top() - end.top()).abs() < 0.1 {
+                        end.left().max(start.left() + 1.)
+                    } else {
+                        start.left() + 3.
+                    },
+                    start.bottom(),
+                ),
+            );
+            if let Some(last) = rows.last_mut()
+                && (last.top() - rect.top()).abs() < 0.1
+            {
+                *last = last.union(rect);
+            } else {
+                rows.push(rect);
+            }
+        }
+        for row in rows {
+            painter.add(egui::Shape::convex_polygon(
+                [
+                    row.left_top(),
+                    row.right_top(),
+                    row.right_bottom(),
+                    row.left_bottom(),
+                ]
+                .map(point)
+                .to_vec(),
+                theme::accent().gamma_multiply(0.25),
+                Stroke::NONE,
+            ));
+        }
+    }
+    let caret = output.galley.pos_from_cursor(range.primary);
     painter.line_segment(
-        [rect.center() - vec2(10., 0.), rect.center() + vec2(10., 0.)],
-        Stroke::new(2., theme::accent()),
+        [point(caret.left_top()), point(caret.left_bottom())],
+        Stroke::new(1.5, theme::accent()),
     );
+}
+
+/// Match the direct manipulation gesture without obscuring resize cursors.
+fn text_grab_cursor(ui: &egui::Ui, rect: Rect, dragging: bool) {
+    if dragging && ui.input(|i| i.pointer.primary_down()) {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+    } else if !ui.input(|i| i.modifiers.shift)
+        && !egui::Popup::is_any_open(ui.ctx())
+        && ui.rect_contains_pointer(rect)
+    {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+    }
 }
 
 /// Move in PDF coordinates from the gesture's start, retaining the block size.
@@ -3442,8 +4017,8 @@ fn open_text_at(state: &mut ContentState, tab: &Tab, page: usize, point: [f32; 2
     let candidates = context::candidates(state, tab, page);
     if let Some(draft) = candidates.iter().rev().find(|draft| {
         Rect::from_min_max(
-            pos2(draft.rect[0], draft.rect[1]),
-            pos2(draft.rect[2], draft.rect[3]),
+            pos2(draft.bounds()[0], draft.bounds()[1]),
+            pos2(draft.bounds()[2], draft.bounds()[3]),
         )
         .expand(3. / scale)
         .contains(pos2(point[0], point[1]))
@@ -3515,12 +4090,12 @@ fn existing_overlay(
                     .is_some_and(|pos| pos.distance(origin) >= 4.)
             }))
         && (state.area_mode
+            || !candidates
+                .iter()
+                .any(|d| screen(d.bounds()).expand(3.).contains(origin)))
+        && (state.area_mode
             || state.existing.as_ref().is_none_or(|draft| {
-                draft.key != key
-                    || (!screen(draft.rect).expand(8.).contains(origin)
-                        && !text_move_handle(screen(draft.rect), page_rect)
-                            .expand(6.)
-                            .contains(origin))
+                draft.key != key || !screen(draft.bounds()).expand(8.).contains(origin)
             }))
     {
         if state
@@ -3564,11 +4139,11 @@ fn existing_overlay(
             );
             let selected: Vec<_> = candidates
                 .into_iter()
-                .filter(|d| r.contains(screen(d.rect).center()))
+                .filter(|d| r.contains(screen(d.bounds()).center()))
                 .collect();
             for item in &selected {
                 painter.rect_filled(
-                    screen(item.rect).expand(2.),
+                    screen(item.bounds()).expand(2.),
                     1.,
                     theme::accent().gamma_multiply(0.17),
                 );
@@ -3613,7 +4188,7 @@ fn existing_overlay(
     for (i, draft) in candidates.iter().cloned().enumerate() {
         if let Some(active) = state.existing.as_ref().filter(|e| e.key == key)
             && let InlineTarget::Block(block) = &active.target
-            && (screen(active.rect).intersects(screen(draft.rect))
+            && (screen(active.bounds()).intersects(screen(draft.bounds()))
                 || match &draft.target {
                     InlineTarget::Run(i) => {
                         block.selection.runs.iter().any(|(ordinal, _)| ordinal == i)
@@ -3626,7 +4201,7 @@ fn existing_overlay(
         {
             continue;
         }
-        let r = screen(draft.rect).expand(3.).intersect(page_rect);
+        let r = screen(draft.bounds()).expand(3.).intersect(page_rect);
         if !r.is_positive() {
             continue;
         }
@@ -3641,9 +4216,13 @@ fn existing_overlay(
             .interact(
                 r,
                 egui::Id::new((tab.id, page, "existing_text", i)),
-                egui::Sense::click(),
+                egui::Sense::click_and_drag(),
             )
-            .on_hover_cursor(egui::CursorIcon::Text);
+            .on_hover_cursor(if ui.input(|i| i.modifiers.shift) {
+                egui::CursorIcon::Text
+            } else {
+                egui::CursorIcon::Grab
+            });
         response.widget_info(|| {
             egui::WidgetInfo::labeled(
                 egui::WidgetType::Button,
@@ -3662,7 +4241,14 @@ fn existing_overlay(
                 egui::StrokeKind::Outside,
             );
         }
-        if response.clicked() && !state.busy {
+        let body_drag = text_move_start(ui, &response).is_some_and(|origin| {
+            ui.input(|i| {
+                i.pointer
+                    .interact_pos()
+                    .is_some_and(|p| p.distance(origin) >= 4.)
+            })
+        });
+        if (response.clicked() || body_drag) && !state.busy {
             clicked = Some(line_at(draft, &candidates, tab.pages[page]));
         }
     }
@@ -3687,7 +4273,7 @@ fn existing_overlay(
             open_text_at(state, tab, page, [p.x, p.y], scale);
         } else if background.interact_pointer_pos().is_some_and(|pos| {
             let p = (pos - page_rect.min) / scale;
-            editing::hit_annotation(tab, page, [p.x, p.y], scale).is_none()
+            editing::hit_annotation(tab, page, [p.x, p.y], scale, editing::Mode::Edit).is_none()
         }) {
             state.click_outside(tab.id);
         }
@@ -3710,6 +4296,26 @@ fn existing_overlay(
     if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Enter)) && !state.busy {
         state.new_commit = true;
     }
+    draft.fit_transformed_text(ui.ctx());
+    let mut resizing = false;
+    let mut width_hover = false;
+    if !state.busy
+        && let Some(a) = draft.layer_preview()
+    {
+        let (rect, owns) = text_width_interaction(
+            ui,
+            &a,
+            page_rect,
+            scale,
+            egui::Id::new((tab.id, page, "resize_existing_block")),
+        );
+        resizing = rect.is_some();
+        width_hover = owns;
+        if let Some(rect) = rect {
+            draft.rect = rect;
+            draft.fit_transformed_text(ui.ctx());
+        }
+    }
     // Process placement before painting the text, selection outline and handle.
     // A single-run editor retains its existing-font replacement until it is
     // actually moved; moving requires the same safe block rewrite as area edits.
@@ -3718,20 +4324,24 @@ fn existing_overlay(
             .geometry
             .as_ref()
             .is_some_and(|g| g.direction[0] < 0.999 || g.direction[1].abs() > 0.01);
+    let body_move = (movable && !state.busy)
+        .then(|| {
+            text_body_move(
+                ui,
+                egui::Id::new((tab.id, page, "existing_text_body_move")),
+                screen(draft.bounds()),
+                !resizing
+                    && draft
+                        .layer_preview()
+                        .is_none_or(|a| text_body_hit(ui, &a, page_rect, scale)),
+            )
+        })
+        .flatten();
     if movable && !state.busy {
         let move_id = egui::Id::new((tab.id, page, "move_existing_block"));
-        let moving = ui
-            .interact(
-                text_move_handle(screen(draft.rect), page_rect),
-                move_id,
-                egui::Sense::drag(),
-            )
-            .on_hover_cursor(egui::CursorIcon::Move)
-            .on_hover_text("Drag to move text block");
-        moving.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Move text block")
-        });
-        let started = text_move_start(ui, &moving);
+        let started = body_move
+            .filter(|(_, started)| *started)
+            .map(|(origin, _)| origin);
         if let Some(pointer) = started {
             if matches!(draft.target, InlineTarget::Run(_)) {
                 let original = draft.original.clone();
@@ -3766,47 +4376,32 @@ fn existing_overlay(
                 )
             });
         }
-        if (moving.dragged() || moving.drag_stopped() || started.is_some())
+        if body_move.is_some()
             && let Some(gesture) = ui.data(|data| data.get_temp::<TextMoveGesture>(move_id))
             && let Some(pointer) = ui.input(|input| input.pointer.interact_pos())
         {
-            draft.rect = moved_text_rect(
-                gesture.rect,
-                (pointer - gesture.pointer) / scale,
-                tab.pages[page],
-            );
+            let delta = (pointer - gesture.pointer) / scale;
+            draft.rect = if let Some(mut a) = draft.transformed_preview() {
+                a.rect = gesture.rect;
+                let bounds = a.bounds();
+                let moved = moved_text_rect(bounds, delta, tab.pages[page]);
+                let dx = moved[0] - bounds[0];
+                let dy = moved[1] - bounds[1];
+                [
+                    a.rect[0] + dx,
+                    a.rect[1] + dy,
+                    a.rect[2] + dx,
+                    a.rect[3] + dy,
+                ]
+            } else {
+                moved_text_rect(gesture.rect, delta, tab.pages[page])
+            };
         }
         if !ui.input(|i| i.pointer.primary_down()) {
             ui.data_mut(|data| data.remove::<TextMoveGesture>(move_id));
         }
     }
-    if matches!(draft.target, InlineTarget::Block(_)) && !state.busy {
-        let response = ui
-            .interact(
-                Rect::from_center_size(
-                    screen(draft.rect).max,
-                    vec2(ui::target_size(16.), ui::target_size(16.)),
-                ),
-                egui::Id::new((tab.id, page, "resize_existing_block")),
-                egui::Sense::drag(),
-            )
-            .on_hover_cursor(egui::CursorIcon::ResizeNwSe)
-            .on_hover_text("Resize text block");
-        if response.dragged()
-            && let Some(pos) = response.interact_pointer_pos()
-        {
-            let p = (pos - page_rect.min) / scale;
-            draft.rect[2] = p.x.clamp(
-                (draft.rect[0] + 10.).min(tab.pages[page].width),
-                tab.pages[page].width,
-            );
-            draft.rect[3] = p.y.clamp(
-                (draft.rect[1] + draft.size * 1.3).min(tab.pages[page].height),
-                tab.pages[page].height,
-            );
-        }
-    }
-    let original = screen(draft.rect);
+    let original = screen(draft.bounds());
     let annotation = matches!(draft.target, InlineTarget::Annotation(_));
     let block = matches!(draft.target, InlineTarget::Block(_));
     let family = if let InlineTarget::Block(block) = &draft.target {
@@ -3881,11 +4476,56 @@ fn existing_overlay(
             }
         }
     }
+    if let Some(a) = draft.transformed_preview() {
+        let text_id = egui::Id::new((tab.id, page, "inline_existing_text"));
+        let mut output = transformed_text_input(
+            ui,
+            draft,
+            &a,
+            page_rect,
+            scale,
+            text_id,
+            body_move.is_some() || resizing || state.busy,
+        );
+        context::text_menu(
+            &mut output,
+            &mut draft.text,
+            &mut state.new_commit,
+            &mut state.show_text_inspector,
+            &mut state.context,
+        );
+        if let InlineTarget::Block(block) = &mut draft.target {
+            formatting::capture(&draft.text, &mut block.selected_chars, output.cursor_range);
+            block.spans =
+                mypdf_milestone0::rich_text::edited(&block.styled_text, &draft.text, &block.spans);
+            block.styled_text = draft.text.clone();
+        }
+        draft.fit_transformed_text(ui.ctx());
+        let a = draft.transformed_preview().unwrap();
+        paint_transformed_cursor(ui, &painter, &a, &output, page_rect, scale);
+        for primitive in mypdf_milestone0::annotations::primitives(&a) {
+            if matches!(
+                primitive,
+                mypdf_milestone0::annotations::Primitive::Text { .. }
+            ) {
+                annotation_render::paint_text(ui.ctx(), &painter, &a, page_rect, scale, primitive);
+            }
+        }
+        if !state.hide_guides {
+            paint_text_bounds(&painter, &a, page_rect, scale);
+        }
+        if width_hover {
+            ui.ctx().set_cursor_icon(text_width_cursor(a.rotation));
+        } else {
+            text_grab_cursor(ui, screen(a.bounds()).shrink(8.), body_move.is_some());
+        }
+        return;
+    }
     if !block {
         painter.rect_filled(original.expand(1.5), 0., Color32::WHITE);
     }
     let outline = rect.expand2(vec2(5., 3.));
-    if !state.hide_guides {
+    if !block && !state.hide_guides {
         ui::dashed_rect(&painter, outline, theme::accent());
     }
     if !block && !state.hide_guides {
@@ -3948,6 +4588,9 @@ fn existing_overlay(
             let text_id = egui::Id::new((tab.id, page, "inline_existing_text"));
             let retained_selection = context::secondary_selection(ui.ctx(), text_id);
             let mut output = edit
+                .interactive(
+                    !resizing && (body_move.is_none() || ui.input(|i| !i.pointer.primary_down())),
+                )
                 .id(text_id)
                 .font(font.clone())
                 .text_color(color)
@@ -3983,12 +4626,34 @@ fn existing_overlay(
                     mypdf_milestone0::rich_text::edited(&b.styled_text, &draft.text, &b.spans);
                 b.styled_text = draft.text.clone();
             }
-            if block {
-                draft.rect[3] = draft.rect[3]
-                    .max(draft.rect[1] + output.galley.size().y / scale + draft.size * 0.3)
-                    .min(tab.pages[page].height);
+            if let InlineTarget::Block(b) = &mut draft.target
+                && b.preserve_layout
+                && (response.changed()
+                    || resizing
+                    || b.fit.is_some()
+                    || b.spans != b.initial_spans
+                    || b.layout != b.initial_layout
+                    || ((draft.rect[2] - draft.rect[0]) - (b.initial.3 - b.initial_origin[0]))
+                        .abs()
+                        > 0.001)
+            {
+                // Retained paragraph gaps and indentation also contribute to height.
+                let height = text_layout_height(&output.galley, scale, draft.size)
+                    .max(output.galley.size().y / scale + draft.size * 0.3);
+                draft.rect[3] = draft.rect[1] + height;
+                b.fit = Some(TextFit {
+                    text: draft.text.clone(),
+                    spans: b.spans.clone(),
+                    width: draft.rect[2] - draft.rect[0],
+                    height,
+                });
+            } else {
+                draft.fit_transformed_text(ui.ctx());
             }
-            if draft.focus {
+            if body_move.is_some() {
+                draft.focus = true;
+            }
+            if draft.focus && (body_move.is_none() || ui.input(|i| !i.pointer.primary_down())) {
                 response.request_focus();
                 draft.focus = false;
             }
@@ -4001,17 +4666,14 @@ fn existing_overlay(
             }
         });
     });
-    if movable && !state.busy {
-        paint_text_move_handle(&painter, text_move_handle(screen(draft.rect), page_rect));
+    if movable && !state.busy && !width_hover {
+        text_grab_cursor(ui, screen(draft.bounds()).shrink(8.), body_move.is_some());
     }
-    if block && !state.busy {
-        let corner = screen(draft.rect).max;
-        painter.circle_filled(corner, theme::handle_radius(5.), Color32::WHITE);
-        painter.circle_stroke(
-            corner,
-            theme::handle_radius(5.),
-            Stroke::new(1.5, theme::accent()),
-        );
+    if block
+        && !state.hide_guides
+        && let Some(a) = draft.layer_preview()
+    {
+        paint_text_bounds(&painter, &a, page_rect, scale);
     }
 }
 
@@ -4050,7 +4712,7 @@ pub(super) fn artwork_overlay(
     });
     let hit = ui.ctx().pointer_interact_pos().and_then(|pos| {
         let p = (pos - page_rect.min) / scale;
-        editing::hit_annotation(tab, page, [p.x, p.y], scale)
+        editing::hit_annotation(tab, page, [p.x, p.y], scale, editing::Mode::Edit)
     });
     if hit
         .as_ref()
@@ -4065,10 +4727,9 @@ pub(super) fn artwork_overlay(
     // user's workspace or drawing tool. Selection handles are essential here,
     // even when passive PDF editing guides have been hidden.
     let previous = (editor.mode, editor.tool, editor.hide_guides);
-    editor.mode = editing::Mode::Draw;
     editor.tool = editing::Tool::Select;
     editor.hide_guides = false;
-    editing::page_interaction(editor, tab, ui, page, page_rect, scale, status);
+    editing::page_object_interaction(editor, tab, ui, page, page_rect, scale, status, true);
     (editor.mode, editor.tool, editor.hide_guides) = previous;
     true
 }
@@ -4128,7 +4789,11 @@ pub(super) fn overlay(
                 egui::Id::new((tab.id, page, "text_page_background")),
                 egui::Sense::click(),
             )
-            .on_hover_cursor(egui::CursorIcon::Text);
+            .on_hover_cursor(if ui.input(|i| i.modifiers.shift) {
+                egui::CursorIcon::Text
+            } else {
+                egui::CursorIcon::Grab
+            });
         if response.clicked() && !placed_now {
             state.click_outside(tab.id);
         }
@@ -4144,6 +4809,31 @@ pub(super) fn overlay(
                 (rgb[1] * 255.) as u8,
                 (rgb[2] * 255.) as u8,
             );
+            let [x, y, w, h] = state.new_rect;
+            let mut a = mypdf_milestone0::annotations::Annotation::new(
+                page,
+                [x, y, x + w, y + h],
+                mypdf_milestone0::annotations::Kind::Text {
+                    text: String::new(),
+                },
+                Default::default(),
+            );
+            let (resized, width_hover) = if placed_now {
+                (None, false)
+            } else {
+                text_width_interaction(
+                    ui,
+                    &a,
+                    page_rect,
+                    scale,
+                    egui::Id::new((tab.id, page, "resize_text_block")),
+                )
+            };
+            let resizing = resized.is_some();
+            if let Some([left, top, right, bottom]) = resized {
+                state.new_initial_rect.get_or_insert(state.new_rect);
+                state.new_rect = [left, top, right - left, bottom - top];
+            }
             // Measure before positioning the editor, including pasted text,
             // wrapping and changes made in the font/size inspector.
             let measured = formatting::layout(
@@ -4163,14 +4853,20 @@ pub(super) fn overlay(
             let painter = ui
                 .painter()
                 .with_clip_rect(page_rect.intersect(ui.clip_rect()));
-            let move_rect = text_move_handle(r, page_rect);
+            let body_move = text_body_move(
+                ui,
+                egui::Id::new((tab.id, page, "new_text_body_move")),
+                r,
+                !placed_now && !resizing && {
+                    a.rect = [x, y, x + w, y + h];
+                    text_body_hit(ui, &a, page_rect, scale)
+                },
+            );
             let move_id = egui::Id::new((tab.id, page, "move_text_block"));
-            let moving = ui
-                .interact(move_rect, move_id, egui::Sense::drag())
-                .on_hover_text("Move text box")
-                .on_hover_cursor(egui::CursorIcon::Move);
             let p = &tab.pages[page];
-            let started = text_move_start(ui, &moving);
+            let started = body_move
+                .filter(|(_, started)| *started)
+                .map(|(origin, _)| origin);
             if let Some(pointer) = started {
                 state.new_initial_rect.get_or_insert(state.new_rect);
                 ui.data_mut(|data| {
@@ -4183,7 +4879,7 @@ pub(super) fn overlay(
                     )
                 });
             }
-            if (moving.dragged() || moving.drag_stopped() || started.is_some())
+            if body_move.is_some()
                 && let Some(gesture) = ui.data(|data| data.get_temp::<TextMoveGesture>(move_id))
                 && let Some(pointer) = ui.input(|input| input.pointer.interact_pos())
             {
@@ -4193,7 +4889,7 @@ pub(super) fn overlay(
             }
             if state.layout_guides
                 && !ui.input(|i| i.modifiers.alt)
-                && (moving.dragged() || moving.drag_stopped())
+                && body_move.is_some()
                 && let Some(info) = &state.inspection
                 && info.key
                     == (
@@ -4217,10 +4913,14 @@ pub(super) fn overlay(
                     .into_iter()
                     .chain(sy)
                     .min_by(|a, b| a.0.abs().total_cmp(&b.0.abs()));
-                if let Some((dx, _)) = sx {
+                if !ui.input(|i| i.pointer.primary_down())
+                    && let Some((dx, _)) = sx
+                {
                     state.new_rect[0] = (x + dx).clamp(0., (p.width - w).max(0.));
                 }
-                if let Some((dy, _)) = sy {
+                if !ui.input(|i| i.pointer.primary_down())
+                    && let Some((dy, _)) = sy
+                {
                     state.new_rect[1] = (y + dy).clamp(0., (p.height - h).max(0.));
                 }
                 manipulation::Guides {
@@ -4259,6 +4959,10 @@ pub(super) fn overlay(
                 let text_id = egui::Id::new((tab.id, page, "inline_new_text"));
                 let retained_selection = context::secondary_selection(ui.ctx(), text_id);
                 let mut edit = egui::TextEdit::multiline(&mut state.new_text)
+                    .interactive(
+                        !resizing
+                            && (body_move.is_none() || ui.input(|i| !i.pointer.primary_down())),
+                    )
                     .font(font.clone())
                     .id(text_id)
                     .text_color(color)
@@ -4303,7 +5007,12 @@ pub(super) fn overlay(
                         fallback,
                     );
                 }
-                if state.focus_new_text {
+                if body_move.is_some() {
+                    state.focus_new_text = true;
+                }
+                if state.focus_new_text
+                    && (body_move.is_none() || ui.input(|i| !i.pointer.primary_down()))
+                {
                     edit.response.request_focus();
                     state.focus_new_text = false;
                 }
@@ -4315,53 +5024,14 @@ pub(super) fn overlay(
             if !state.hide_guides {
                 ui::dashed_rect(&painter, r.expand(2.), theme::accent());
             }
-            paint_text_move_handle(&painter, text_move_handle(r, page_rect));
-            for (edge, center, cursor) in [
-                (0, r.left_center(), egui::CursorIcon::ResizeHorizontal),
-                (1, r.right_center(), egui::CursorIcon::ResizeHorizontal),
-                (2, r.max, egui::CursorIcon::ResizeNwSe),
-            ] {
-                let handle = Rect::from_center_size(
-                    center,
-                    vec2(ui::target_size(12.), ui::target_size(12.)),
-                );
-                painter.circle_filled(center, theme::handle_radius(5.), Color32::WHITE);
-                painter.circle_stroke(
-                    center,
-                    theme::handle_radius(5.),
-                    Stroke::new(1.5, theme::accent()),
-                );
-                let resize = ui
-                    .interact(
-                        handle,
-                        egui::Id::new((tab.id, page, "resize_text_block", edge)),
-                        egui::Sense::drag(),
-                    )
-                    .on_hover_cursor(cursor);
-                if resize.drag_started() {
-                    state.new_initial_rect.get_or_insert(state.new_rect);
-                    state.new_drag = Some(state.new_rect);
-                }
-                if resize.dragged()
-                    && let Some(original) = state.new_drag
-                {
-                    let d = resize.total_drag_delta().unwrap_or_default() / scale;
-                    if edge == 0 {
-                        let right = original[0] + original[2];
-                        state.new_rect[0] = (original[0] + d.x).clamp(0., (right - 10.).max(0.));
-                        state.new_rect[2] = right - state.new_rect[0];
-                    } else {
-                        state.new_rect[2] = (original[2] + d.x).clamp(10., (p.width - x).max(10.));
-                    }
-                    if edge == 2 {
-                        state.new_auto_height = false;
-                        state.new_rect[3] = (original[3] + d.y)
-                            .clamp(state.new_size, (p.height - y).max(state.new_size));
-                    }
-                }
+            if width_hover {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+            } else {
+                text_grab_cursor(ui, r.shrink(8.), body_move.is_some());
             }
-            if !ui.input(|i| i.pointer.primary_down()) {
-                state.new_drag = None;
+            if !state.hide_guides {
+                a.rect = [x, y, x + w, y + state.new_rect[3]];
+                paint_text_width_handles(&painter, &a, page_rect, scale);
             }
         }
         return;
@@ -5550,7 +6220,7 @@ mod tests {
 
     #[test]
     fn edited_pdf_text_drag_moves_preview_and_commits_one_undoable_change() {
-        // Exercise a normal single-run click editor and a multi-line area editor.
+        // Exercise interior drags for single-run and area editors.
         for area in [false, true] {
             let ctx = egui::Context::default();
             let mut app = Viewer::new(&eframe::CreationContext::_new_kittest(ctx.clone()), vec![]);
@@ -5611,7 +6281,6 @@ mod tests {
             } else {
                 items.into_iter().next()
             };
-            let id = app.tabs[0].id;
             let page_rect = Rect::from_min_size(pos2(20., 20.), vec2(595., 842.) * 1.25);
             let frame = |app: &mut Viewer, events| {
                 ctx.run(
@@ -5657,17 +6326,18 @@ mod tests {
                     egui::Event::Text("Moved words".into()),
                 ],
             );
-            let start = ctx
-                .read_response(egui::Id::new((id, 0_usize, "move_existing_block")))
-                .expect("selected PDF text has an accessible move handle")
-                .rect
-                .center();
+            let r = app.content.existing.as_ref().unwrap().rect;
+            let start = page_rect.min + vec2((r[0] + r[2]) / 2., (r[1] + r[3]) / 2.) * 1.25;
             let _ = frame(
                 &mut app,
                 vec![egui::Event::PointerMoved(start), pointer(start, true)],
             );
             let end = start + vec2(65., 110.) * 1.25;
             let output = frame(&mut app, vec![egui::Event::PointerMoved(end)]);
+            assert_eq!(
+                output.platform_output.cursor_icon,
+                egui::CursorIcon::Grabbing
+            );
             let draft = app
                 .content
                 .existing
@@ -5704,16 +6374,19 @@ mod tests {
                 (text_position - expected).length() < 1.,
                 "text is painted at the moved position during this drag frame: {text_position:?} vs {expected:?}"
             );
-            assert!(output.shapes.iter().any(|shape| matches!(&shape.shape,
+            assert!(
+                output.shapes.iter().any(|shape| matches!(&shape.shape,
                 egui::Shape::LineSegment { points, stroke }
-                    if stroke.color == theme::accent() && (points[0] - (expected - vec2(5., 3.))).length() < 0.01)),
-                "selection outline is painted at the same new position in this frame");
+                    if stroke.color == theme::accent() && (points[0] - expected).length() < 0.01)),
+                "selection outline is painted at the same new position in this frame"
+            );
             assert_eq!(
                 &*app.tabs[0].session.as_ref().unwrap().source,
                 &source,
                 "dragging previews the whole draft without mutating the PDF"
             );
-            let _ = frame(&mut app, vec![pointer(end, false)]);
+            let output = frame(&mut app, vec![pointer(end, false)]);
+            assert_eq!(output.platform_output.cursor_icon, egui::CursorIcon::Grab);
             assert!(
                 ctx.wants_keyboard_input(),
                 "moving must not route typing Undo to a previous document change"
@@ -6021,16 +6694,13 @@ mod tests {
                 };
                 frame(&mut app, vec![]);
                 frame(&mut app, vec![]);
-                let key = if new_text {
-                    "move_text_block"
+                let start = if new_text {
+                    let [x, y, w, h] = app.content.new_rect;
+                    pos2(20. + x + w / 2., 20. + y + h / 2.)
                 } else {
-                    "move_existing_block"
+                    let r = app.content.existing.as_ref().unwrap().rect;
+                    pos2(20. + (r[0] + r[2]) / 2., 20. + (r[1] + r[3]) / 2.)
                 };
-                let start = ctx
-                    .read_response(egui::Id::new((id, 0_usize, key)))
-                    .unwrap()
-                    .rect
-                    .center();
                 let end = start + vec2(130., 95.);
                 if event_mode == 2 {
                     frame(
@@ -6087,7 +6757,391 @@ mod tests {
     }
 
     #[test]
-    fn text_move_clamps_to_page_and_handle_stays_reachable_at_small_zoom() {
+    fn transformed_document_text_keeps_geometry_preview_and_dragged_save() {
+        use mypdf_milestone0::{annotations, text_layer};
+        for (rotation, flip_x, flip_y) in
+            [(27.8, false, false), (0., true, false), (-18., false, true)]
+        {
+            let ctx = egui::Context::default();
+            let mut app = Viewer::new(&eframe::CreationContext::_new_kittest(ctx.clone()), vec![]);
+            let source = text_layer::add(
+                &convert::blank(595., 842.).unwrap(),
+                1,
+                "Rotated document text",
+                [120., 100., 220., 60.],
+                18.,
+                [0.1, 0.2, 0.3],
+                &TextFormat::default(),
+                &[],
+            )
+            .unwrap();
+            let mut marks = annotations::load(&lopdf::Document::load_mem(&source).unwrap());
+            marks[0].rotation = rotation;
+            marks[0].flip_x = flip_x;
+            marks[0].flip_y = flip_y;
+            let original = marks[0].clone();
+            let source = annotations::export(&source, &marks).unwrap();
+            app.open_memory(PathBuf::from("Rotated text.pdf"), source.clone(), &ctx);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while app.tabs[0].session.is_none() {
+                app.events(&ctx);
+                assert!(std::time::Instant::now() < deadline);
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            app.content.existing = Some(annotation_candidate(&original, (app.tabs[0].id, 0, 0)));
+            let draft = app.content.existing.as_ref().unwrap();
+            assert!(
+                !draft.changed(),
+                "selecting rotated text must not alter its dimensions"
+            );
+            assert_eq!(draft.rect, original.rect);
+            let InlineTarget::Block(block) = &draft.target else {
+                panic!()
+            };
+            assert_eq!(
+                block.masks,
+                vec![original.bounds()],
+                "erase the entire rotated original"
+            );
+            let page_rect = Rect::from_min_size(pos2(20., 20.), vec2(595., 842.));
+            let frame = |app: &mut Viewer, events| {
+                ctx.run(
+                    egui::RawInput {
+                        screen_rect: Some(Rect::from_min_size(pos2(0., 0.), vec2(800., 1000.))),
+                        events,
+                        ..Default::default()
+                    },
+                    |ctx| {
+                        egui::CentralPanel::default().show(ctx, |ui| {
+                            overlay(
+                                &mut app.content,
+                                editing::Mode::Edit,
+                                &app.tabs[0],
+                                ui,
+                                0,
+                                page_rect,
+                                1.,
+                            );
+                        });
+                    },
+                )
+            };
+            let _ = frame(&mut app, vec![]);
+            let output = frame(&mut app, vec![]);
+            assert!(!app.content.existing.as_ref().unwrap().changed());
+            let texts: Vec<_> = output
+                .shapes
+                .iter()
+                .filter_map(|shape| match &shape.shape {
+                    egui::Shape::Text(text)
+                        if text.galley.job.text == original.kind.text().unwrap() =>
+                    {
+                        Some(text)
+                    }
+                    _ => None,
+                })
+                .collect();
+            if !flip_x && !flip_y {
+                assert_eq!(texts.len(), 1, "only the rotated preview is painted");
+                assert!((texts[0].angle - rotation.to_radians()).abs() < 0.001);
+            } else {
+                assert!(
+                    texts.is_empty(),
+                    "mirrored text uses transformed meshes, not a horizontal editor"
+                );
+            }
+            let button = |pos, pressed| egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            // Click a character in its rotated/mirrored on-page location and type.
+            let galley =
+                annotation_render::layer_layout(&ctx, &original, original.kind.text().unwrap(), 1.);
+            let caret = galley.pos_from_cursor(egui::text::CCursor::new(3)).center();
+            let p = original.rotated([
+                original.rect[0] + caret.x - galley.rect.min.x,
+                original.rect[1] + caret.y,
+            ]);
+            let caret = page_rect.min + vec2(p[0], p[1]);
+            let _ = frame(&mut app, vec![egui::Event::PointerMoved(caret)]);
+            let _ = frame(&mut app, vec![button(caret, true)]);
+            let _ = frame(&mut app, vec![button(caret, false)]);
+            let _ = frame(&mut app, vec![egui::Event::Text("X".into())]);
+            assert_eq!(
+                app.content.existing.as_ref().unwrap().text,
+                "RotXated document text",
+                "click maps to the rotated caret"
+            );
+            let _ = frame(
+                &mut app,
+                vec![
+                    egui::Event::Key {
+                        key: egui::Key::A,
+                        physical_key: None,
+                        pressed: true,
+                        repeat: false,
+                        modifiers: egui::Modifiers::COMMAND,
+                    },
+                    egui::Event::Text(original.kind.text().unwrap().into()),
+                ],
+            );
+            let before_move = app.content.existing.as_ref().unwrap().rect;
+            let bounds = app.content.existing.as_ref().unwrap().bounds();
+            let start =
+                page_rect.min + vec2((bounds[0] + bounds[2]) / 2., (bounds[1] + bounds[3]) / 2.);
+            let hover = frame(&mut app, vec![egui::Event::PointerMoved(start)]);
+            assert_eq!(hover.platform_output.cursor_icon, egui::CursorIcon::Grab);
+            let _ = frame(&mut app, vec![button(start, true)]);
+            let end = start + vec2(40., 60.);
+            let moved = frame(&mut app, vec![egui::Event::PointerMoved(end)]);
+            assert_eq!(
+                moved.platform_output.cursor_icon,
+                egui::CursorIcon::Grabbing
+            );
+            let _ = frame(&mut app, vec![button(end, false)]);
+            let draft = app.content.existing.as_ref().unwrap();
+            for (i, actual) in draft.rect.iter().enumerate() {
+                let expected = before_move[i] + if i % 2 == 0 { 40. } else { 60. };
+                assert!(
+                    (actual - expected).abs() < 0.001,
+                    "move must translate without resizing: {:?}",
+                    draft.rect
+                );
+            }
+            assert_eq!(draft.transformed_preview().unwrap().rotation, rotation);
+            app.content.new_commit = true;
+            app.finish_new_text(&ctx);
+            while app.content.busy {
+                app.content_events(&ctx);
+                assert!(std::time::Instant::now() < deadline, "{:?}", app.status);
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            let session = app.tabs[0].session.as_ref().unwrap();
+            let updated = session
+                .annotations
+                .iter()
+                .find(|a| a.id == original.id)
+                .unwrap();
+            assert_eq!(updated.rotation, rotation);
+            assert_eq!((updated.flip_x, updated.flip_y), (flip_x, flip_y));
+            assert_eq!(updated.kind.text(), original.kind.text());
+            assert!((updated.rect[0] - before_move[0] - 40.).abs() < 0.001);
+            assert!(session.can_undo());
+        }
+    }
+
+    #[test]
+    fn transformed_canvas_edits_grow_before_commit_and_allow_adding_more_text() {
+        use mypdf_milestone0::{annotations, text_layer};
+        for (rotation, flip_x, text, font_size) in [
+            (27.8, false, "hello\n", 18.),
+            (0., false, "hello\nworld", 18.),
+            (0., true, "hello\nworld", 18.),
+            (-18., false, "Longer words wrap into several lines", 18.),
+            (27.8, false, "hello", 36.),
+        ] {
+            let ctx = egui::Context::default();
+            let mut app = Viewer::new(&eframe::CreationContext::_new_kittest(ctx.clone()), vec![]);
+            let source = text_layer::add(
+                &convert::blank(595., 842.).unwrap(),
+                1,
+                "hello",
+                [100., 180., 108., 27.],
+                18.,
+                [0.; 3],
+                &TextFormat::default(),
+                &[],
+            )
+            .unwrap();
+            let mut marks = annotations::load(&lopdf::Document::load_mem(&source).unwrap());
+            marks[0].rotation = rotation;
+            marks[0].flip_x = flip_x;
+            let original = marks[0].clone();
+            let origin = original.rotated([original.rect[0], original.rect[1]]);
+            let source = annotations::export(&source, &marks).unwrap();
+            app.open_memory(PathBuf::from("Text line breaks.pdf"), source, &ctx);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+            while app.tabs[0].session.is_none() {
+                app.events(&ctx);
+                assert!(std::time::Instant::now() < deadline);
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            let id = app.tabs[0].id;
+            app.content.existing = Some(annotation_candidate(&original, (id, 0, 0)));
+            let panel = |app: &mut Viewer, events| {
+                let _ = ctx.run(
+                    egui::RawInput {
+                        screen_rect: Some(Rect::from_min_size(pos2(0., 0.), vec2(1100., 1000.))),
+                        events,
+                        ..Default::default()
+                    },
+                    |ctx| {
+                        egui::CentralPanel::default().show(ctx, |ui| {
+                            overlay(
+                                &mut app.content,
+                                editing::Mode::Edit,
+                                &app.tabs[0],
+                                ui,
+                                0,
+                                Rect::from_min_size(pos2(20., 20.), vec2(595., 842.)),
+                                1.,
+                            );
+                        });
+                    },
+                );
+            };
+            panel(&mut app, vec![]);
+            panel(&mut app, vec![]);
+            panel(
+                &mut app,
+                vec![
+                    egui::Event::Key {
+                        key: egui::Key::A,
+                        physical_key: None,
+                        pressed: true,
+                        repeat: false,
+                        modifiers: egui::Modifiers::COMMAND,
+                    },
+                    egui::Event::Text(text.into()),
+                ],
+            );
+            let draft = app.content.existing.as_mut().unwrap();
+            assert_eq!(
+                draft.text, text,
+                "the on-page editor receives text and line breaks"
+            );
+            if font_size != 18. {
+                draft.size = font_size;
+                let InlineTarget::Block(block) = &mut draft.target else {
+                    panic!()
+                };
+                for span in &mut block.spans {
+                    span.size = font_size;
+                }
+            }
+            // Finish before the next canvas frame, as Done/Save/mode switches do.
+            app.content.new_commit = true;
+            app.finish_new_text(&ctx);
+            while app.content.busy {
+                app.content_events(&ctx);
+                assert!(std::time::Instant::now() < deadline, "{:?}", app.status);
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            assert!(
+                app.content.existing.is_none(),
+                "successful edit must release the editor for {text:?} at {font_size}: {:?}, rect={:?}",
+                app.status,
+                app.content.existing.as_ref().map(|d| d.rect)
+            );
+            let updated = &app.tabs[0].session.as_ref().unwrap().annotations[0];
+            assert_eq!(updated.kind.text(), Some(text));
+            assert!(updated.rect[3] - updated.rect[1] > 27.);
+            let new_origin = updated.rotated([updated.rect[0], updated.rect[1]]);
+            assert!(
+                (new_origin[0] - origin[0]).hypot(new_origin[1] - origin[1]) < 0.001,
+                "height growth must not shift the first line"
+            );
+            assert_eq!(updated.rotation, rotation);
+            assert_eq!(updated.flip_x, flip_x);
+            // Deleting a line must shrink even when it restores the original words.
+            if font_size == 18. {
+                let height = updated.rect[3] - updated.rect[1];
+                let mut draft = annotation_candidate(
+                    updated,
+                    (id, app.tabs[0].session.as_ref().unwrap().revision(), 0),
+                );
+                draft.text = "hi".into();
+                draft.fit_transformed_text(&ctx);
+                assert!(draft.rect[3] - draft.rect[1] < height);
+                let a = draft.layer_preview().unwrap();
+                let shrunk_origin = a.rotated([a.rect[0], a.rect[1]]);
+                assert!((shrunk_origin[0] - origin[0]).hypot(shrunk_origin[1] - origin[1]) < 0.001);
+                app.content.existing = Some(draft);
+                app.content.new_commit = true;
+                app.finish_new_text(&ctx);
+                while app.content.busy {
+                    app.content_events(&ctx);
+                    assert!(std::time::Instant::now() < deadline, "{:?}", app.status);
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                assert!(app.content.existing.is_none(), "{:?}", app.status);
+            }
+            app.content
+                .place_text(id, 0, [320., 350.], app.tabs[0].pages[0]);
+            app.content.new_text = "New text after editing".into();
+            app.content.new_commit = true;
+            app.finish_new_text(&ctx);
+            while app.content.busy {
+                app.content_events(&ctx);
+                assert!(std::time::Instant::now() < deadline, "{:?}", app.status);
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            let bytes = app.tabs[0]
+                .session
+                .as_ref()
+                .unwrap()
+                .snapshot_bytes()
+                .unwrap();
+            let saved = annotations::load(&lopdf::Document::load_mem(&bytes).unwrap());
+            assert!(
+                saved
+                    .iter()
+                    .any(|a| a.kind.text() == Some("New text after editing")),
+                "{:?}",
+                app.status
+            );
+            assert!(
+                saved
+                    .iter()
+                    .any(|a| a.kind.text() == Some(if font_size == 18. { "hi" } else { text }))
+            );
+        }
+    }
+
+    #[test]
+    fn text_width_resize_follows_baseline_and_keeps_opposite_anchor() {
+        use mypdf_milestone0::annotations::{Annotation, Kind};
+        for rotation in [0_f32, 27.8, 90., -40.] {
+            for flip_x in [false, true] {
+                for edge in [0, 1] {
+                    let mut a = Annotation::new(
+                        0,
+                        [100., 120., 300., 180.],
+                        Kind::Text {
+                            text: "text".into(),
+                        },
+                        Default::default(),
+                    );
+                    a.rotation = rotation;
+                    a.flip_x = flip_x;
+                    let (sin, cos) = rotation.to_radians().sin_cos();
+                    let before =
+                        a.rotated([if edge == 0 { a.rect[2] } else { a.rect[0] }, a.rect[1]]);
+                    let perpendicular = resized_text_width(&a, vec2(-sin, cos) * 90., edge, 595.);
+                    assert!((perpendicular[2] - perpendicular[0] - 200.).abs() < 0.001);
+                    let result = resized_text_width(
+                        &a,
+                        vec2(cos, sin) * 40. * if flip_x { -1. } else { 1. },
+                        edge,
+                        595.,
+                    );
+                    assert!(
+                        (result[2] - result[0] - if edge == 0 { 160. } else { 240. }).abs() < 0.001
+                    );
+                    assert!((result[3] - result[1] - 60.).abs() < 0.001);
+                    a.rect = result;
+                    let after =
+                        a.rotated([if edge == 0 { a.rect[2] } else { a.rect[0] }, a.rect[1]]);
+                    assert!((before[0] - after[0]).hypot(before[1] - after[1]) < 0.001);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn text_move_clamps_to_page() {
         let page = PageSize {
             width: 595.,
             height: 842.,
@@ -6101,15 +7155,6 @@ mod tests {
             moved_text_rect(rect, vec2(1000., 2000.), page),
             [395., 782., 595., 842.]
         );
-        for scale in [0.005, 0.05, 1., 4.] {
-            let page = Rect::from_min_size(pos2(10., 10.), vec2(page.width, page.height) * scale);
-            let block = Rect::from_min_size(page.min, vec2(200., 60.) * scale);
-            let handle = text_move_handle(block, page);
-            assert!(
-                handle.is_finite() && page.contains_rect(handle),
-                "{handle:?}, page: {page:?}"
-            );
-        }
     }
 
     #[test]
@@ -6724,7 +7769,7 @@ mod tests {
             ],
         );
         let handle = ctx
-            .read_response(egui::Id::new((id, 0_usize, "resize_existing_block")))
+            .read_response(egui::Id::new((id, 0_usize, "resize_existing_block")).with(1_usize))
             .unwrap()
             .rect
             .center();
@@ -6954,7 +7999,7 @@ mod tests {
         assert_eq!(app.tabs[0].session.as_ref().unwrap().revision(), revision);
     }
     #[test]
-    fn existing_text_and_text_annotations_edit_in_place_and_cancel_safely() {
+    fn existing_text_edits_preserve_annotations_and_cancel_safely() {
         use eframe::App;
         use mypdf_milestone0::annotations::{Annotation, Kind, Style};
         let ctx = egui::Context::default();
@@ -7102,27 +8147,17 @@ mod tests {
                 .collect::<String>(),
             "İstanbul!"
         );
-        let r = ctx
-            .read_response(egui::Id::new((id, 0_usize, "existing_text", runs.len())))
-            .unwrap()
-            .rect;
-        click(&mut app, r.center());
-        frame(
-            &mut app,
-            vec![
-                key(egui::Key::A, egui::Modifiers::COMMAND),
-                egui::Event::Text("Text box changed in place".into()),
-            ],
-        );
-        frame(
-            &mut app,
-            vec![key(egui::Key::Enter, egui::Modifiers::COMMAND)],
-        );
-        wait(&mut app, |a| {
-            a.content.existing.is_none() && !a.content.loading
-        });
         assert!(
-            matches!(&app.tabs[0].session.as_ref().unwrap().annotations[0].kind,Kind::Text{text} if text == "Text box changed in place")
+            context::candidates(&app.content, &app.tabs[0], 0)
+                .iter()
+                .all(|draft| !matches!(draft.target, InlineTarget::Annotation(_))),
+            "annotation text must not become an Edit candidate"
+        );
+        assert_eq!(
+            app.tabs[0].session.as_ref().unwrap().annotations[0]
+                .kind
+                .text(),
+            Some("Your text")
         );
         let revision = app.tabs[0].session.as_ref().unwrap().revision();
         for _ in 0..3 {
@@ -7207,7 +8242,7 @@ mod tests {
         let doc = lopdf::Document::load_mem(&bytes).unwrap();
         assert!(doc.extract_text(&[1]).unwrap().contains("İstanbul!"));
         assert!(
-            matches!(&mypdf_milestone0::annotations::load(&doc)[0].kind,Kind::Text{text} if text=="Text box changed in place")
+            matches!(&mypdf_milestone0::annotations::load(&doc)[0].kind,Kind::Text{text} if text=="Your text")
         );
     }
 
@@ -7437,7 +8472,7 @@ mod tests {
         }
         app.content.add_target = Some((app.tabs[0].id, 0));
         app.content.new_rect = [40., 60., 200., 80.];
-        app.content.new_auto_height = false;
+        app.content.new_text = "Document text".into();
         app.content.new_placed = true;
         let run = |app: &mut Viewer, events| {
             let _ = ctx.run(
@@ -7468,26 +8503,51 @@ mod tests {
             modifiers: egui::Modifiers::NONE,
         };
         run(&mut app, vec![]);
+        run(&mut app, vec![]);
+        run(&mut app, vec![]);
+        let height = app.content.new_rect[3];
+        assert!(height < 80., "unused vertical space is removed");
+        let handle_id = egui::Id::new((app.tabs[0].id, 0_usize, "resize_text_block")).with(1_usize);
+        let handle = ctx.read_response(handle_id).unwrap().rect.center();
+        run(&mut app, vec![egui::Event::PointerMoved(handle)]);
+        run(&mut app, vec![button(handle, true)]);
+        // A large vertical component must neither move the box nor change its height.
         run(
             &mut app,
-            vec![
-                egui::Event::PointerMoved(pos2(260., 160.)),
-                button(pos2(260., 160.), true),
-            ],
+            vec![egui::Event::PointerMoved(handle + vec2(20., 60.))],
         );
-        run(&mut app, vec![egui::Event::PointerMoved(pos2(300., 190.))]);
-        run(&mut app, vec![button(pos2(300., 190.), false)]);
-        assert_eq!(app.content.new_rect, [40., 60., 240., 110.]);
+        assert_eq!(app.content.new_rect, [40., 60., 220., height]);
         run(
             &mut app,
-            vec![
-                egui::Event::PointerMoved(pos2(180., 73.)),
-                button(pos2(180., 73.), true),
-            ],
+            vec![egui::Event::PointerMoved(handle + vec2(40., 90.))],
         );
-        run(&mut app, vec![egui::Event::PointerMoved(pos2(220., 123.))]);
-        run(&mut app, vec![button(pos2(220., 123.), false)]);
-        assert_eq!(app.content.new_rect, [80., 110., 240., 110.]);
+        run(&mut app, vec![button(handle + vec2(40., 90.), false)]);
+        assert_eq!(app.content.new_rect, [40., 60., 240., height]);
+        let inside = pos2(150., 80. + height / 2.);
+        run(&mut app, vec![egui::Event::PointerMoved(inside)]);
+        run(&mut app, vec![button(inside, true)]);
+        run(
+            &mut app,
+            vec![egui::Event::PointerMoved(inside + vec2(13., 17.))],
+        );
+        assert_eq!(app.content.new_rect, [53., 77., 240., height]);
+        run(
+            &mut app,
+            vec![egui::Event::PointerMoved(inside + vec2(35., 45.))],
+        );
+        run(&mut app, vec![button(inside + vec2(35., 45.), false)]);
+        assert_eq!(app.content.new_rect, [75., 105., 240., height]);
+        assert_eq!(app.content.new_text, "Document text");
+        app.content.new_text = "Document text\nSecond line\nThird line".into();
+        run(&mut app, vec![]);
+        assert!(app.content.new_rect[3] > height * 2.);
+        app.content.new_text = "Document text".into();
+        run(&mut app, vec![]);
+        assert_eq!(
+            app.content.new_rect,
+            [75., 105., 240., height],
+            "deleting lines shrinks the box without moving it"
+        );
     }
 
     fn keyboard_fixture() -> (Viewer, egui::Context, Vec<u8>) {
@@ -7544,6 +8604,230 @@ mod tests {
             color: run.color,
             font: run.base_font,
             focus: false,
+        }
+    }
+
+    #[test]
+    fn text_rotation_buttons_step_and_wrap() {
+        let ctx = egui::Context::default();
+        let frame = |rotation: &mut f32, events| {
+            ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(pos2(0., 0.), vec2(310., 220.))),
+                    events,
+                    ..Default::default()
+                },
+                |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        text_rotation_controls(ui, rotation);
+                    });
+                },
+            )
+        };
+        let mut rotation = 175.;
+        let _ = frame(&mut rotation, vec![]);
+        for (label, expected) in [("+15°", -170.), ("−15°", 175.)] {
+            let output = frame(&mut rotation, vec![]);
+            let pos = output.shapes.iter().find_map(|s| match &s.shape {
+                egui::Shape::Text(t) if t.galley.job.text == label => {
+                    Some(t.pos + t.galley.rect.center().to_vec2())
+                }
+                _ => None,
+            });
+            let pos = pos.expect("step button is visible");
+            for pressed in [true, false] {
+                let _ = frame(
+                    &mut rotation,
+                    vec![
+                        egui::Event::PointerMoved(pos),
+                        egui::Event::PointerButton {
+                            pos,
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: egui::Modifiers::NONE,
+                        },
+                    ],
+                );
+            }
+            assert_eq!(rotation, expected);
+        }
+    }
+
+    #[test]
+    fn text_property_rotation_and_reset_preserve_editable_text_and_undo() {
+        let (mut app, ctx, source) = keyboard_fixture();
+        let run = keyboard_run(&app, &source);
+        let mut draft = selected_block(vec![run.clone()], run.rect, app.tabs[0].pages[0]).unwrap();
+        let InlineTarget::Block(block) = &mut draft.target else {
+            panic!()
+        };
+        block.rotation = 30.;
+        app.content.existing = Some(draft);
+        // Initialize fonts, then commit rotation without a canvas paint first.
+        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        app.content.new_commit = true;
+        app.finish_new_text(&ctx);
+        keyboard_wait(&mut app, &ctx);
+        assert!(app.content.existing.is_none(), "{:?}", app.status);
+        let session = app.tabs[0].session.as_ref().unwrap();
+        let a = session
+            .annotations
+            .iter()
+            .find(|a| a.object.text.is_some())
+            .unwrap()
+            .clone();
+        assert_eq!(a.rotation, 30.);
+        assert_eq!(a.kind.text(), Some("Original words"));
+        let key = (app.tabs[0].id, session.revision(), 0);
+        let mut draft = annotation_candidate(&a, key);
+        let InlineTarget::Block(block) = &mut draft.target else {
+            panic!()
+        };
+        block.rotation = 0.;
+        assert!(draft.changed(), "Reset rotation is a document edit");
+        assert!(
+            draft.transformed_preview().is_none(),
+            "reset uses ordinary inline typing"
+        );
+        app.content.existing = Some(draft);
+        app.content.new_commit = true;
+        app.finish_new_text(&ctx);
+        keyboard_wait(&mut app, &ctx);
+        assert!(app.content.existing.is_none(), "{:?}", app.status);
+        let session = app.tabs[0].session.as_mut().unwrap();
+        let a = session
+            .annotations
+            .iter()
+            .find(|a| a.object.text.is_some())
+            .unwrap();
+        assert_eq!(a.rotation, 0.);
+        assert_eq!(a.kind.text(), Some("Original words"));
+        session.undo();
+        assert_eq!(
+            session
+                .annotations
+                .iter()
+                .find(|a| a.object.text.is_some())
+                .unwrap()
+                .rotation,
+            30.
+        );
+        session.undo();
+        assert_eq!(
+            &*session.source, &source,
+            "both edits undo back to the original native PDF text"
+        );
+    }
+
+    #[test]
+    fn direct_text_drag_selects_and_moves_while_shift_drag_selects_characters() {
+        for fast in [false, true] {
+            let (mut app, ctx, source) = keyboard_fixture();
+            let id = app.tabs[0].id;
+            app.content.inspection = Some(Inspection {
+                key: (id, 0, 0),
+                text: Ok(mypdf_milestone0::text_geometry::runs(&source, 1).unwrap()),
+                guides: Default::default(),
+                images: Ok(vec![]),
+                fields: Ok(vec![]),
+                designed: Ok(vec![]),
+            });
+            let page_rect = Rect::from_min_size(pos2(20., 20.), vec2(400., 500.));
+            let frame = |app: &mut Viewer, events, modifiers| {
+                let _ = ctx.run(
+                    egui::RawInput {
+                        time: Some(ctx.input(|i| i.time) + 0.25),
+                        screen_rect: Some(Rect::from_min_size(pos2(0., 0.), vec2(700., 800.))),
+                        events,
+                        modifiers,
+                        ..Default::default()
+                    },
+                    |ctx| {
+                        egui::CentralPanel::default().show(ctx, |ui| {
+                            existing_overlay(&mut app.content, &app.tabs[0], ui, 0, page_rect, 1.);
+                        });
+                    },
+                );
+            };
+            let button = |pos, pressed, modifiers| egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers,
+            };
+            let none = egui::Modifiers::NONE;
+            frame(&mut app, vec![], none);
+            frame(&mut app, vec![], none);
+            let r = ctx
+                .read_response(egui::Id::new((id, 0_usize, "existing_text", 0_usize)))
+                .unwrap()
+                .rect;
+            let start = r.center();
+            let end = start + vec2(45., 65.);
+            if fast {
+                frame(
+                    &mut app,
+                    vec![
+                        egui::Event::PointerMoved(start),
+                        button(start, true, none),
+                        egui::Event::PointerMoved(end),
+                        button(end, false, none),
+                    ],
+                    none,
+                );
+            } else {
+                frame(
+                    &mut app,
+                    vec![egui::Event::PointerMoved(start), button(start, true, none)],
+                    none,
+                );
+                frame(&mut app, vec![egui::Event::PointerMoved(end)], none);
+                frame(&mut app, vec![button(end, false, none)], none);
+            }
+            let draft = app
+                .content
+                .existing
+                .as_ref()
+                .expect("Dragging unselected text opens its editor");
+            let InlineTarget::Block(block) = &draft.target else {
+                panic!("drag promotes text to a movable block")
+            };
+            assert!(
+                (draft.rect[0] - block.initial_origin[0] - 45.).abs() < 0.01,
+                "{:?}",
+                draft.rect
+            );
+            assert!((draft.rect[1] - block.initial_origin[1] - 65.).abs() < 0.01);
+            assert_eq!(draft.text, "Original words");
+            let moved = draft.rect;
+            frame(&mut app, vec![], none);
+            let r = ctx
+                .read_response(egui::Id::new((id, 0_usize, "inline_existing_text")))
+                .unwrap()
+                .rect;
+            let start = r.right_top() + vec2(-4., 8.);
+            let end = r.left_top() + vec2(4., 8.);
+            let shift = egui::Modifiers::SHIFT;
+            frame(
+                &mut app,
+                vec![egui::Event::PointerMoved(start), button(start, true, shift)],
+                shift,
+            );
+            frame(&mut app, vec![egui::Event::PointerMoved(end)], shift);
+            frame(&mut app, vec![button(end, false, shift)], shift);
+            assert_eq!(
+                app.content.existing.as_ref().unwrap().rect,
+                moved,
+                "Shift-drag never moves the box"
+            );
+            let InlineTarget::Block(block) = &app.content.existing.as_ref().unwrap().target else {
+                unreachable!()
+            };
+            assert!(
+                block.selected_chars.as_ref().is_some_and(|r| !r.is_empty()),
+                "Shift-drag selects characters: {:?}, rect={r:?}, fast={fast}",
+                block.selected_chars
+            );
         }
     }
 

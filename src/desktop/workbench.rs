@@ -461,8 +461,14 @@ fn commands(query: &str) -> Vec<usize> {
         .collect()
 }
 impl Viewer {
+    pub(super) fn workflow_owns_input(&self) -> bool {
+        self.review.owns_input()
+            || self.sharing.is_open()
+            || self.editor.collections.is_open()
+            || self.productivity.owns_input()
+    }
     pub(super) fn workbench_owns_shortcuts(&self) -> bool {
-        self.productivity.owns_input()
+        self.workflow_owns_input()
             || self.content.context.bookmark.is_some()
             || self.workbench.palette
             || self.workbench.crop.is_some()
@@ -1458,10 +1464,15 @@ impl Viewer {
             return;
         }
         ui.weak("Objects · topmost first");
+        let mode = self.editor.mode;
         egui::ScrollArea::vertical()
             .id_salt("objects_list")
             .show(ui, |ui| {
-                for a in entries.iter_mut().rev() {
+                for a in entries
+                    .iter_mut()
+                    .rev()
+                    .filter(|a| editing::selectable_in_mode(a, mode))
+                {
                     let selected =
                         t.selected_annotation.as_ref() == Some(&a.id) || t.group.contains(&a.id);
                     ui.push_id(a.id.clone(), |ui| {

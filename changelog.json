@@ -2,6 +2,21 @@
   "unreleased": [],
   "releases": [
     {
+      "version": "3.1.1",
+      "changes": [
+        "Voice notes in Comment: record, pause, play and export local audio; WAV recordings stay inside the PDF.",
+        "Notes open in a nearby editable popover, with the panel for longer comments and Review for replies. Callouts remain visible on the page.",
+        "Revision clouds, replacement suggestions and insertion notes keep the original document text unchanged.",
+        "PDF review summaries with numbered page previews; CSV export and MyPDF comment exchange with duplicate checks and safe conflict handling.",
+        "Export → Prepare for sharing: remove comments, metadata and attachments, or flatten visible pages to exclude hidden content.",
+        "Compact Select/Lasso menu and artwork collection manager; reorder or hide items, with 45 optional hidden arrows, symbols and stamps.",
+        "Strict Edit/Annotate separation; smoother dragging, immediate drawing selection and clearer active tools. Only the selected Draw icon shows ink color.",
+        "In-place rotated text editing, width-only resizing with automatic height, grab cursors and ±15° rotation controls.",
+        "Maintenance: reuse parsed PDFs and page previews, reduce review-list copying, bound export memory and retain recordings after a failed attachment.",
+        "Complete feature guide included. The 3.1 line now enters a feature freeze focused on reliability and performance."
+      ]
+    },
+    {
       "version": "3.1.0",
       "changes": [
         "Move and resize annotations reliably; drag inside text boxes to move, double-click to type. Choose font family and regular, bold or italic styles.",

@@ -298,6 +298,8 @@ pub(super) enum Icon {
     Sign,
     Shield,
     Library,
+    ManageCollection,
+    Microphone,
     Undo,
     Redo,
     RotateLeft,
@@ -323,6 +325,7 @@ pub(super) enum Icon {
     Triangle,
     Pentagon,
     Hexagon,
+    Cloud,
     Ellipse,
     Circle,
     Semicircle,
@@ -1090,6 +1093,38 @@ fn draw_icon_impl(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color3
             }
             fill_box([0.56, 0.56], [0.9, 0.9], 0.07, soft);
         }
+        Icon::Cloud => {
+            let points = mypdf_milestone0::annotations::Shape::Cloud.outline();
+            line(&points);
+        }
+        Icon::Microphone => {
+            box_at([0.36, 0.08], [0.64, 0.60], 0.14);
+            line(&[
+                [0.22, 0.43],
+                [0.22, 0.57],
+                [0.30, 0.72],
+                [0.50, 0.78],
+                [0.70, 0.72],
+                [0.78, 0.57],
+                [0.78, 0.43],
+            ]);
+            line(&[[0.50, 0.78], [0.50, 0.94]]);
+            line(&[[0.32, 0.94], [0.68, 0.94]]);
+        }
+        Icon::ManageCollection => {
+            for (x, y) in [(0.08, 0.08), (0.55, 0.08), (0.08, 0.55)] {
+                box_at([x, y], [x + 0.31, y + 0.31], 0.05);
+            }
+            line(&[
+                [0.48, 0.85],
+                [0.53, 0.66],
+                [0.83, 0.36],
+                [0.97, 0.50],
+                [0.67, 0.80],
+                [0.48, 0.85],
+            ]);
+            line(&[[0.77, 0.42], [0.91, 0.56]]);
+        }
         Icon::FlipHorizontal | Icon::FlipVertical => {
             let orient = |v: [f32; 2]| {
                 if matches!(icon, Icon::FlipVertical) {
@@ -1697,8 +1732,10 @@ pub(super) struct ActionButton<'a> {
     primary: bool,
     compact: bool,
     tab: bool,
+    mode_tab: bool,
     dropdown: bool,
     tint: Option<Color32>,
+    drawing_ink: Option<Color32>,
 }
 impl<'a> ActionButton<'a> {
     pub fn new(icon: Icon, label: &'a str) -> Self {
@@ -1710,8 +1747,10 @@ impl<'a> ActionButton<'a> {
             primary: false,
             compact: false,
             tab: false,
+            mode_tab: false,
             dropdown: false,
             tint: None,
+            drawing_ink: None,
         }
     }
     pub fn selected(mut self, value: bool) -> Self {
@@ -1728,6 +1767,12 @@ impl<'a> ActionButton<'a> {
         self.tab = true;
         self
     }
+    /// Main workspace modes use a strong, persistent active state.
+    pub fn mode_tab(mut self) -> Self {
+        self.tab = true;
+        self.mode_tab = true;
+        self
+    }
     pub fn compact(mut self) -> Self {
         self.compact = true;
         self
@@ -1741,12 +1786,22 @@ impl<'a> ActionButton<'a> {
         self.tint = Some(color);
         self
     }
+    /// Preview the document stroke color only while this tool is selected.
+    pub fn drawing_ink(mut self, color: Color32) -> Self {
+        self.drawing_ink = Some(color);
+        self
+    }
     pub fn width(&self, ui: &egui::Ui) -> f32 {
+        let font = if self.mode_tab {
+            strong(ui, 13.)
+        } else {
+            FontId::proportional(13.)
+        };
         let text = if self.compact {
             0.
         } else {
             ui.fonts_mut(|f| {
-                f.layout_no_wrap(self.label.into(), FontId::proportional(13.0), theme::ink())
+                f.layout_no_wrap(self.label.into(), font, theme::ink())
                     .size()
                     .x
             }) + 44.0
@@ -1756,7 +1811,11 @@ impl<'a> ActionButton<'a> {
 }
 impl egui::Widget for ActionButton<'_> {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-        let font = FontId::proportional(13.0);
+        let font = if self.mode_tab && self.selected {
+            strong(ui, 13.)
+        } else {
+            FontId::proportional(13.)
+        };
         let base_color = theme::ink();
         let galley = ui
             .painter()
@@ -1788,8 +1847,13 @@ impl egui::Widget for ActionButton<'_> {
             let enabled = ui.is_enabled();
             let hovered = enabled && response.hovered();
             let pressed = hovered && response.is_pointer_button_down_on();
-            let filled = self.primary && enabled;
-            let radius = theme::style().radius();
+            let active_mode = self.mode_tab && self.selected;
+            let filled = (self.primary || active_mode) && enabled;
+            let radius = if self.selected && !self.tab {
+                theme::style().radius().min(7)
+            } else {
+                theme::style().radius()
+            };
             if filled {
                 painter.rect_filled(
                     rect,
@@ -1805,6 +1869,23 @@ impl egui::Widget for ActionButton<'_> {
                     shadow(painter, rect, radius, 1);
                 }
                 painter.rect_filled(rect, radius, theme::accent_soft());
+                if !self.tab {
+                    // Tool selection must remain distinct from a transient hover,
+                    // including icon-only tools and those showing an ink swatch.
+                    painter.rect_stroke(
+                        rect,
+                        radius,
+                        Stroke::new(
+                            2.,
+                            if enabled {
+                                theme::accent().gamma_multiply(0.65)
+                            } else {
+                                theme::muted()
+                            },
+                        ),
+                        egui::StrokeKind::Inside,
+                    );
+                }
                 if theme::style() == theme::Style::Calico && self.tab {
                     painter.line_segment(
                         [
@@ -1834,6 +1915,17 @@ impl egui::Widget for ActionButton<'_> {
             } else {
                 base_color
             };
+            if active_mode && enabled {
+                // A second geometric cue remains clear in compact/icon-only mode.
+                painter.rect_filled(
+                    Rect::from_center_size(
+                        pos2(rect.center().x, rect.bottom() - 3.),
+                        vec2(16., 2.),
+                    ),
+                    1.,
+                    theme::on_accent(),
+                );
+            }
             if response.has_focus() {
                 painter.rect_stroke(
                     rect.expand(1.),
@@ -1856,6 +1948,30 @@ impl egui::Widget for ActionButton<'_> {
                 enabled && !filled && self.tint.is_none(),
                 fg,
             );
+            let (icon_color, duotone) = if let Some(ink) = self
+                .drawing_ink
+                .filter(|_| self.selected && enabled && !filled)
+            {
+                // Extreme document colors still need to be visible in either theme.
+                let brightness =
+                    (ink.r() as u32 * 299 + ink.g() as u32 * 587 + ink.b() as u32 * 114) / 1000;
+                if (ui.visuals().dark_mode && brightness < 120)
+                    || (!ui.visuals().dark_mode && brightness > 225)
+                {
+                    painter.rect_filled(
+                        icon_rect.expand(2.),
+                        3.,
+                        if brightness < 120 {
+                            Color32::from_gray(235)
+                        } else {
+                            Color32::from_gray(65)
+                        },
+                    );
+                }
+                (ink, false)
+            } else {
+                (icon_color, duotone)
+            };
             draw_icon_impl(painter, icon_rect, self.icon, icon_color, duotone);
             if let Some(tint) = self.tint {
                 let bar =
@@ -3413,6 +3529,27 @@ fn style_for(style: &mut egui::Style, p: &theme::Palette, dark: bool) {
     ] {
         style.text_styles.insert(text_style, font);
     }
+}
+
+/// Hover opens a menu; accessibility/keyboard clicks work without pointer hover.
+/// Remember a chosen action until the pointer leaves the trigger, so it cannot
+/// reopen immediately after an accessibility press on a menu item.
+pub(super) fn menu_hover_open(response: &egui::Response) -> Option<egui::SetOpenCommand> {
+    let key = response.id.with("menu_hover_blocked");
+    if !response.hovered() {
+        response.ctx.data_mut(|d| d.remove::<bool>(key));
+    }
+    let blocked = response
+        .ctx
+        .data(|d| d.get_temp::<bool>(key))
+        .unwrap_or(false);
+    (response.clicked() || response.hovered() && !blocked)
+        .then_some(egui::SetOpenCommand::Bool(true))
+}
+pub(super) fn menu_hover_chosen(response: &egui::Response) {
+    response
+        .ctx
+        .data_mut(|d| d.insert_temp(response.id.with("menu_hover_blocked"), true));
 }
 
 #[cfg(test)]

@@ -121,6 +121,7 @@ pub enum Shape {
     Hexagon,
     Circle,
     Semicircle,
+    Cloud,
 }
 impl Shape {
     pub fn label(self) -> &'static str {
@@ -132,6 +133,7 @@ impl Shape {
             Self::Hexagon => "Hexagon",
             Self::Circle => "Circle",
             Self::Semicircle => "Semicircle",
+            Self::Cloud => "Revision cloud",
         }
     }
     /// The last vertex closes to the first. Geometry is shared by the page,
@@ -169,6 +171,28 @@ impl Shape {
                     [0.5 + 0.5 * angle.cos(), 0.5 + 0.5 * angle.sin()]
                 })
                 .collect(),
+            Self::Cloud => {
+                let mut points = Vec::new();
+                for (start, tangent, normal) in [
+                    ([0.08, 0.08], [1., 0.], [0., -1.]),
+                    ([0.92, 0.08], [0., 1.], [1., 0.]),
+                    ([0.92, 0.92], [-1., 0.], [0., 1.]),
+                    ([0.08, 0.92], [0., -1.], [-1., 0.]),
+                ] {
+                    for lobe in 0..5 {
+                        for step in 0..=10 {
+                            let angle = std::f32::consts::PI * (1. - step as f32 / 10.);
+                            let along = (lobe as f32 + 0.5 + 0.5 * angle.cos()) * 0.168;
+                            let outward = angle.sin() * 0.08;
+                            points.push([
+                                start[0] + tangent[0] * along + normal[0] * outward,
+                                start[1] + tangent[1] * along + normal[1] * outward,
+                            ]);
+                        }
+                    }
+                }
+                points
+            }
             Self::Semicircle => (0..=64)
                 .map(|i| {
                     let angle = std::f32::consts::PI * (1. + i as f32 / 64.);
@@ -566,6 +590,10 @@ pub struct Annotation {
     #[serde(default)]
     pub flip_y: bool,
     pub kind: Kind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice: Option<crate::voice::Clip>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggestion: Option<crate::review::Suggestion>,
     pub style: Style,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asset_id: Option<String>,
@@ -582,12 +610,29 @@ impl Annotation {
             flip_x: false,
             flip_y: false,
             kind,
+            voice: None,
+            suggestion: None,
             style,
             asset_id: None,
             object: ObjectProperties::default(),
         }
     }
     pub fn validate(&self) -> Result<()> {
+        if let Some(suggestion) = &self.suggestion {
+            ensure!(
+                matches!(self.kind, Kind::Note { .. })
+                    && self.voice.is_none()
+                    && suggestion.original.len() <= 32_000,
+                "Invalid text suggestion"
+            );
+        }
+        if let Some(voice) = &self.voice {
+            ensure!(
+                matches!(self.kind, Kind::Note { .. }),
+                "Voice recordings require a comment"
+            );
+            voice.validate()?;
+        }
         if let Some(layer) = &self.object.text {
             ensure!(
                 matches!(self.kind, Kind::Text { .. }),
@@ -2126,8 +2171,18 @@ fn raw_primitives(a: &Annotation) -> Vec<Primitive> {
                 result.push(icon_path(&outline, true, true));
             }
             result.push(icon_path(&outline, true, false));
-            result.push(icon_path(&[[0.28, 0.31], [0.72, 0.31]], false, false));
-            result.push(icon_path(&[[0.28, 0.51], [0.60, 0.51]], false, false));
+            if a.voice.is_some() {
+                for (x, height) in [(0.29, 0.10), (0.43, 0.25), (0.57, 0.35), (0.71, 0.18)] {
+                    result.push(icon_path(
+                        &[[x, 0.41 - height / 2.], [x, 0.41 + height / 2.]],
+                        false,
+                        false,
+                    ));
+                }
+            } else {
+                result.push(icon_path(&[[0.28, 0.31], [0.72, 0.31]], false, false));
+                result.push(icon_path(&[[0.28, 0.51], [0.60, 0.51]], false, false));
+            }
             result
         }
         Kind::Text { text } => {
@@ -2904,6 +2959,20 @@ pub fn export(bytes: &[u8], annotations: &[Annotation]) -> Result<Vec<u8>> {
             _ => "Stamp",
         };
         let mut d = dictionary! { "Type" => "Annot", "Subtype" => subtype, "Rect" => pdf_numbers(rect), "P" => page_id, "F" => (if a.object.hidden { 2 } else { 4 } | if a.object.locked { 128 } else { 0 }), "NM" => Object::string_literal(format!("MyPDF-{}", a.id)), "T" => text_string("MyPDF"), "C" => pdf_numbers(a.style.color), "CA" => a.style.opacity, "BS" => dictionary! { "W" => a.style.width, "S" => "S" }, "AP" => dictionary! { "N" => ap }, "MyPDFData" => Object::string_literal(serde_json::to_string(a)?) };
+        if let Some(voice) = &a.voice
+            && !voice.wav.is_empty()
+        {
+            let mut audio = Stream::new(
+                dictionary! {"Type" => "EmbeddedFile", "Subtype" => "audio/wav", "Params" => dictionary! {"Size" => voice.wav.len() as i64}},
+                voice.wav.as_ref().clone(),
+            );
+            audio.compress()?;
+            let audio_id = doc.add_object(audio);
+            let filename = format!("voice-note-{}.wav", a.id);
+            let file = doc.add_object(dictionary! {"Type" => "Filespec", "F" => Object::string_literal(filename.clone()), "UF" => text_string(&filename), "Desc" => text_string(a.kind.text().unwrap_or("Voice note")), "EF" => dictionary! {"F" => audio_id, "UF" => audio_id}});
+            d.set("Subtype", "FileAttachment");
+            d.set("FS", file);
+        }
         if let Some(dash) = a.style.stroke.dash_array(a.style.width).filter(|_| {
             !matches!(
                 a.kind,
@@ -3099,7 +3168,14 @@ pub fn export(bytes: &[u8], annotations: &[Annotation]) -> Result<Vec<u8>> {
                 }
                 set_text_defaults(&mut d, a, appearance_font);
             }
-            Kind::Note { .. } => d.set("Name", "Comment"),
+            Kind::Note { .. } => d.set(
+                "Name",
+                if a.voice.as_ref().is_some_and(|v| !v.wav.is_empty()) {
+                    "Graph"
+                } else {
+                    "Comment"
+                },
+            ),
             Kind::Text { .. } => set_text_defaults(&mut d, a, appearance_font),
             Kind::Stamp { .. } | Kind::Image { .. } | Kind::Symbol(_) => {
                 d.set("Name", "MyPDFStamp")

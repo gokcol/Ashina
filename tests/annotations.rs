@@ -30,9 +30,24 @@ fn repeated_exports_prune_superseded_appearances() {
 fn builtin_artwork_exports_as_editable_vector_annotations_without_library_writes() {
     let library = assets::builtin_assets();
     assert_eq!(
-        library.iter().filter(|a| a.category == "Stamps").count(),
+        library
+            .iter()
+            .filter(|a| a.category == "Stamps" && a.default_visible)
+            .count(),
         26
     );
+    for category in ["Arrows", "Symbols", "Stamps"] {
+        assert_eq!(
+            library
+                .iter()
+                .filter(|a| a.category == category && !a.default_visible)
+                .count(),
+            15
+        );
+    }
+    let first_optional = library.iter().position(|a| !a.default_visible).unwrap();
+    assert!(library[..first_optional].iter().all(|a| a.default_visible));
+    assert!(library[first_optional..].iter().all(|a| !a.default_visible));
     let ids: std::collections::HashSet<_> = library.iter().map(|b| &b.asset.id).collect();
     assert_eq!(ids.len(), library.len());
     assert_eq!(assets::builtin_assets()[0].asset.id, library[0].asset.id);

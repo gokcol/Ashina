@@ -141,6 +141,11 @@ pub(super) fn members(tab: &Tab) -> Vec<&Annotation> {
 pub(super) fn set(tab: &mut Tab, editor: &mut EditorState, mut ids: Vec<String>) {
     if let Some(s) = &tab.session {
         ids = mypdf_milestone0::object_tools::expand_groups(&s.annotations, &ids);
+        ids.retain(|id| {
+            s.annotations
+                .iter()
+                .any(|a| &a.id == id && editing::selectable_in_mode(a, editor.mode))
+        });
     }
     let mut seen = HashSet::new();
     ids.retain(|id| seen.insert(id.clone()));
@@ -169,6 +174,14 @@ pub(super) fn set(tab: &mut Tab, editor: &mut EditorState, mut ids: Vec<String>)
 }
 /// Drop marks that no longer exist or moved to another page, collapsing a group of one.
 pub(super) fn normalize(tab: &mut Tab, editor: &mut EditorState) {
+    let ids = selected_ids(tab);
+    if tab.session.as_ref().is_some_and(|s| {
+        s.annotations
+            .iter()
+            .any(|a| ids.contains(&a.id) && !editing::selectable_in_mode(a, editor.mode))
+    }) {
+        set(tab, editor, ids);
+    }
     if tab.group.is_empty() {
         return;
     }
@@ -253,7 +266,7 @@ fn picks(tab: &Tab, m: &Marquee) -> Vec<String> {
     let last = *m.points.last().unwrap();
     s.annotations
         .iter()
-        .filter(|a| a.page == m.page && !a.object.hidden)
+        .filter(|a| a.page == m.page && !a.object.hidden && a.object.text.is_none())
         .filter(|a| {
             let c = center(a);
             if m.lasso {
@@ -546,7 +559,7 @@ pub(super) fn begin(
                 })
             })
         });
-        if on_handle || editing::hit_annotation(tab, page, p, scale).is_some() {
+        if on_handle || editing::hit_annotation(tab, page, p, scale, editor.mode).is_some() {
             return false;
         }
     }
@@ -631,7 +644,11 @@ pub(super) fn update(
                         ([0., 0.], Default::default())
                     };
                     g.guides = guides;
-                    self::moved(&moved, delta, size)
+                    if released {
+                        self::moved(&moved, delta, size)
+                    } else {
+                        moved
+                    }
                 }
                 Drag::Scale { anchor, corner } => {
                     let s = scale_factor(&g.originals, anchor, corner, p, size);

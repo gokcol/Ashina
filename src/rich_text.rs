@@ -208,59 +208,15 @@ struct Piece {
     style: usize,
     width: f32,
 }
-pub fn add(bytes: &[u8], page: u32, text: &str, rect: [f32; 4], spans: &[Span]) -> Result<Vec<u8>> {
-    add_aligned(
-        bytes,
-        page,
-        text,
-        rect,
-        spans,
-        crate::text_style::Alignment::Left,
-    )
+struct WrappedRows {
+    styles: Vec<Span>,
+    writers: Vec<Writer>,
+    rows: Vec<Vec<Piece>>,
+    row_layout: Vec<Option<LineLayout>>,
+    paragraph_ends: std::collections::HashSet<usize>,
 }
 
-pub fn add_aligned(
-    bytes: &[u8],
-    page: u32,
-    text: &str,
-    rect: [f32; 4],
-    spans: &[Span],
-    alignment: crate::text_style::Alignment,
-) -> Result<Vec<u8>> {
-    add_with_layout(bytes, page, text, rect, spans, alignment, &[])
-}
-
-/// Keep each explicit line's indentation and baseline. Soft wraps use the same
-/// indentation and move subsequent lines down while retaining their original gaps.
-pub fn add_positioned(
-    bytes: &[u8],
-    page: u32,
-    text: &str,
-    rect: [f32; 4],
-    spans: &[Span],
-    layout: &[LineLayout],
-) -> Result<Vec<u8>> {
-    add_with_layout(
-        bytes,
-        page,
-        text,
-        rect,
-        spans,
-        crate::text_style::Alignment::Left,
-        layout,
-    )
-}
-
-fn add_with_layout(
-    bytes: &[u8],
-    page: u32,
-    text: &str,
-    rect: [f32; 4],
-    spans: &[Span],
-    alignment: crate::text_style::Alignment,
-    layout: &[LineLayout],
-) -> Result<Vec<u8>> {
-    use crate::text_style::Alignment;
+fn validate_spans(text: &str, spans: &[Span]) -> Result<()> {
     ensure!(
         text.len() <= 32768 && !spans.is_empty() && spans.len() <= 4096,
         "Text block exceeds its style limit"
@@ -282,41 +238,10 @@ fn add_with_layout(
         end = s.range.end;
     }
     ensure!(end == text.len(), "Incomplete text styles");
-    let mut doc = crate::content::editable(bytes)?;
-    let id = *doc.get_pages().get(&page).context("Page not found")?;
-    let geometry = crate::annotations::page_geometry(bytes)?;
-    let (size, transform) = geometry
-        .get(page as usize - 1)
-        .context("Page geometry missing")?;
-    let [x, y, w, h] = rect;
-    ensure!(
-        rect.iter().all(|v| v.is_finite())
-            && x >= 0.
-            && y >= 0.
-            && w >= 10.
-            && h >= 4.
-            && x + w <= size[2] + 0.1
-            && y + h <= size[3] + 0.1,
-        "Text block must fit inside the page"
-    );
-    if !layout.is_empty() {
-        ensure!(
-            layout.len() <= 32769
-                && layout.iter().map(|line| line.start).eq(line_starts(text))
-                && layout.iter().all(|line| {
-                    line.left.is_finite()
-                        && line.baseline.is_finite()
-                        && x + line.left >= 0.
-                        && line.left < w
-                        && line.baseline >= 0.
-                        && line.baseline <= h + 0.1
-                })
-                && layout
-                    .windows(2)
-                    .all(|rows| rows[0].baseline < rows[1].baseline),
-            "Invalid preserved line layout"
-        );
-    }
+    Ok(())
+}
+
+fn wrap_rows(text: &str, w: f32, spans: &[Span], layout: &[LineLayout]) -> Result<WrappedRows> {
     let mut styles: Vec<Span> = vec![];
     let mut writers = vec![];
     let mut rows: Vec<Vec<Piece>> = vec![vec![]];
@@ -382,6 +307,132 @@ fn add_with_layout(
             }
         }
     }
+    Ok(WrappedRows {
+        styles,
+        writers,
+        rows,
+        row_layout,
+        paragraph_ends,
+    })
+}
+
+/// Use precisely the same font measurement and wrapping as PDF export.
+/// The UI can reserve enough vertical space before committing an auto-height block.
+pub fn required_height(text: &str, width: f32, spans: &[Span]) -> Result<f32> {
+    validate_spans(text, spans)?;
+    ensure!(
+        width.is_finite() && width >= 10.,
+        "Invalid text block width"
+    );
+    let wrapped = wrap_rows(text, width, spans, &[])?;
+    Ok(wrapped
+        .rows
+        .iter()
+        .map(|row| {
+            row.iter()
+                .map(|p| wrapped.styles[p.style].size)
+                .fold(spans[0].size, f32::max)
+                * 1.3
+        })
+        .sum())
+}
+
+pub fn add(bytes: &[u8], page: u32, text: &str, rect: [f32; 4], spans: &[Span]) -> Result<Vec<u8>> {
+    add_aligned(
+        bytes,
+        page,
+        text,
+        rect,
+        spans,
+        crate::text_style::Alignment::Left,
+    )
+}
+
+pub fn add_aligned(
+    bytes: &[u8],
+    page: u32,
+    text: &str,
+    rect: [f32; 4],
+    spans: &[Span],
+    alignment: crate::text_style::Alignment,
+) -> Result<Vec<u8>> {
+    add_with_layout(bytes, page, text, rect, spans, alignment, &[])
+}
+
+/// Keep each explicit line's indentation and baseline. Soft wraps use the same
+/// indentation and move subsequent lines down while retaining their original gaps.
+pub fn add_positioned(
+    bytes: &[u8],
+    page: u32,
+    text: &str,
+    rect: [f32; 4],
+    spans: &[Span],
+    layout: &[LineLayout],
+) -> Result<Vec<u8>> {
+    add_with_layout(
+        bytes,
+        page,
+        text,
+        rect,
+        spans,
+        crate::text_style::Alignment::Left,
+        layout,
+    )
+}
+
+fn add_with_layout(
+    bytes: &[u8],
+    page: u32,
+    text: &str,
+    rect: [f32; 4],
+    spans: &[Span],
+    alignment: crate::text_style::Alignment,
+    layout: &[LineLayout],
+) -> Result<Vec<u8>> {
+    use crate::text_style::Alignment;
+    validate_spans(text, spans)?;
+    let mut doc = crate::content::editable(bytes)?;
+    let id = *doc.get_pages().get(&page).context("Page not found")?;
+    let geometry = crate::annotations::page_geometry(bytes)?;
+    let (size, transform) = geometry
+        .get(page as usize - 1)
+        .context("Page geometry missing")?;
+    let [x, y, w, h] = rect;
+    ensure!(
+        rect.iter().all(|v| v.is_finite())
+            && x >= 0.
+            && y >= 0.
+            && w >= 10.
+            && h >= 4.
+            && x + w <= size[2] + 0.1
+            && y + h <= size[3] + 0.1,
+        "Text block must fit inside the page"
+    );
+    if !layout.is_empty() {
+        ensure!(
+            layout.len() <= 32769
+                && layout.iter().map(|line| line.start).eq(line_starts(text))
+                && layout.iter().all(|line| {
+                    line.left.is_finite()
+                        && line.baseline.is_finite()
+                        && x + line.left >= 0.
+                        && line.left < w
+                        && line.baseline >= 0.
+                        && line.baseline <= h + 0.1
+                })
+                && layout
+                    .windows(2)
+                    .all(|rows| rows[0].baseline < rows[1].baseline),
+            "Invalid preserved line layout"
+        );
+    }
+    let WrappedRows {
+        styles,
+        mut writers,
+        rows,
+        row_layout,
+        mut paragraph_ends,
+    } = wrap_rows(text, w, spans, layout)?;
     let mut shaped = vec![];
     let mut top = y;
     let mut preserved_left = 0.;
