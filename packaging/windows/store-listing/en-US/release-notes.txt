@@ -1,13 +1,14 @@
-MyPDF 3.1.0
+MyPDF 3.1.1
 
-• Move and resize annotations reliably; drag inside text boxes to move, double-click to type. Choose font family and regular, bold or italic styles.
-• Stamps stay in Annotate with editable text and colors. Reuse custom variants or open the visual artwork editor.
-• Visual stamp designer: select, move, resize, rotate and layer objects; edit text, shapes, colors and transparency with Undo/Redo.
-• Six border templates, rounded corners and independent background, fill and outline opacity; advanced SVG source remains available.
-• Touchscreen detection, Touch/Mouse modes, finger drawing, two-finger pan/pinch, long-press menus and a floating toolbar.
-• Customizable Home, polished Settings/About, five visual styles and compact icon previews. Left panel starts hidden.
-• Click existing text to edit; click outside to finish, then click again for the next edit. Improved table-cell editing.
-• A4 new pages, per-page resizing and images fitted to the page; move/resize/rotate images and add text above them.
-• Insert PDF, images, TXT, Markdown and SVG; DOCX/RTF use installed Word or LibreOffice.
-• Choose OCR pages and review results; offline Windows OCR includes English, Turkish and German. Edit PDF metadata.
-• Reliable Save/autosave, offline What’s New and update checks. Mac 3.1 uses a signed, notarized DMG download.
+• Voice notes in Comment: record, pause, play and export local audio; WAV recordings stay inside the PDF.
+• Note threads in the right panel: names, initials, dates, replies and Resolve/Reopen. PDF replies use standard thread links for other readers.
+• Revision clouds, replacement suggestions and insertion notes keep the original document text unchanged.
+• PDF review summaries with numbered page previews; CSV export and MyPDF comment exchange with duplicate checks and safe conflict handling.
+• Export → Prepare for sharing: remove comments, metadata and attachments, or flatten visible pages to exclude hidden content.
+• Compact Select/Lasso menu and artwork collection manager; reorder or hide items, with 45 optional hidden arrows, symbols and stamps.
+• Strict Edit/Annotate separation; smoother dragging, immediate drawing selection and clearer active tools. Only the selected Draw icon shows ink color.
+• In-place rotated text editing, width-only resizing with automatic height, grab cursors and ±15° rotation controls.
+• Maintenance: reuse parsed PDFs and page previews, reduce review-list copying, bound export memory and retain recordings after a failed attachment.
+• Complete feature guide included. The 3.1 line now enters a feature freeze focused on reliability and performance.
+
+Also includes touch detection, finger drawing and floating touch tools; customizable Home, five visual styles, polished Settings and offline OCR.
