@@ -19,6 +19,7 @@ jobs:
         run: |
           python3 -B scripts/test-clean-build-output.py
           python3 -B scripts/test-macos-packaging.py
+          python3 -B scripts/test-sparkle-sign.py
           python3 -B scripts/test-macos-open-with.py
           xcrun clang -fobjc-arc -fmodules -Wall -Werror -framework AppKit native/updater/SparkleBridgeTests.m -o /tmp/mypdf-updater-tests
           /tmp/mypdf-updater-tests
