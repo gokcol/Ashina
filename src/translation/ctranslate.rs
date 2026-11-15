@@ -890,17 +890,25 @@ mod tests {
         let token = AtomicBool::new(false);
         eprintln!("Verifying installed model before inference");
         verify_installed(&root, &pack, &token).unwrap();
-        eprintln!("Loading native translation library");
-        let runtime = Runtime::load().unwrap();
-        eprintln!("Creating native translation engine");
-        let engine = runtime.engine(&root.join(pack.key())).unwrap();
-        eprintln!("Translating synthetic text");
-        let output = engine.translate("This is a test.", &token).unwrap();
-        assert_ne!(output, "This is a test.");
-        assert!(output.to_lowercase().contains("test"), "{output}");
-        println!("Native synthetic English → French: {output}");
-        eprintln!("Shutting down native engine");
-        drop(engine);
+        // Regression: Windows RUY and non-OpenMP pools used to deadlock when
+        // their thread-local destructors joined threads under the loader lock.
+        // Exercise engine destruction AND DLL unloading, then start again.
+        for cycle in 1..=5 {
+            eprintln!("Cycle {cycle}: loading native translation library");
+            let runtime = Runtime::load().unwrap();
+            eprintln!("Creating native translation engine");
+            let engine = runtime.engine(&root.join(pack.key())).unwrap();
+            eprintln!("Translating synthetic text");
+            let output = engine.translate("This is a test.", &token).unwrap();
+            assert_ne!(output, "This is a test.");
+            assert!(output.to_lowercase().contains("test"), "{output}");
+            println!("Native synthetic English → French: {output}");
+            eprintln!("Shutting down native engine");
+            drop(engine);
+            eprintln!("Unloading native library");
+            drop(runtime);
+            eprintln!("Cycle {cycle}: clean shutdown passed");
+        }
         eprintln!("Native translation smoke test passed");
     }
     #[test]

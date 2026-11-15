@@ -1,0 +1,132 @@
+--- a/src/cpu/backend.cc
++++ b/src/cpu/backend.cc
+@@ -104,10 +104,24 @@
+     }
+ 
+ #ifdef CT2_WITH_RUY
++#ifdef _WIN32
++    // Backport OpenNMT/CTranslate2#2076: join before thread exit/loader lock.
++    static thread_local ruy::Context* ruy_context = nullptr;
++    ruy::Context *get_ruy_context() {
++      if (!ruy_context)
++        ruy_context = new ruy::Context();
++      return ruy_context;
++    }
++    void clear_ruy_context() {
++      delete ruy_context;
++      ruy_context = nullptr;
++    }
++#else
+     ruy::Context *get_ruy_context() {
+       static thread_local ruy::Context context;
+       return &context;
+     }
+ #endif
++#endif
+   }
+ }
+--- a/src/cpu/backend.h
++++ b/src/cpu/backend.h
+@@ -28,6 +28,9 @@
+     bool pack_gemm_weights(ComputeType compute_type);
+ #ifdef CT2_WITH_RUY
+     ruy::Context *get_ruy_context();
++#ifdef _WIN32
++    void clear_ruy_context();
++#endif
+ #endif
+ 
+   }
+--- a/src/cpu/parallel.cc
++++ b/src/cpu/parallel.cc
+@@ -15,10 +15,24 @@
+       return num_threads;
+     }
+ 
++#ifdef _WIN32
++    // With OpenMP disabled this pool also joins threads in its destructor.
++    static thread_local BS::thread_pool_light* thread_pool = nullptr;
++    BS::thread_pool_light& get_thread_pool() {
++      if (!thread_pool)
++        thread_pool = new BS::thread_pool_light(num_threads);
++      return *thread_pool;
++    }
++    void clear_thread_pool() {
++      delete thread_pool;
++      thread_pool = nullptr;
++    }
++#else
+     BS::thread_pool_light& get_thread_pool() {
+       static thread_local BS::thread_pool_light thread_pool(num_threads);
+       return thread_pool;
+     }
++#endif
+ 
+ #endif
+ 
+--- a/src/cpu/parallel.h
++++ b/src/cpu/parallel.h
+@@ -33,6 +33,9 @@
+     size_t get_num_threads();
+ 
+     BS::thread_pool_light& get_thread_pool();
++#ifdef _WIN32
++    void clear_thread_pool();
++#endif
+ #endif
+ 
+     template <typename Function>
+--- a/include/ctranslate2/devices.h
++++ b/include/ctranslate2/devices.h
+@@ -25,6 +25,9 @@
+ 
+   void synchronize_device(Device device, int index);
+   void synchronize_stream(Device device);
++
++  // Explicit per-thread CPU cleanup; call before thread exit on Windows.
++  void destroy_context(Device device);
+ 
+   class ScopedDeviceSetter {
+   public:
+--- a/src/devices.cc
++++ b/src/devices.cc
+@@ -1,4 +1,8 @@
+ #include "ctranslate2/devices.h"
++#ifdef _WIN32
++#  include "cpu/backend.h"
++#  include "cpu/parallel.h"
++#endif
+ 
+ #ifdef CT2_WITH_CUDA
+ #  include "cuda/utils.h"
+@@ -118,6 +122,20 @@
+     (void)device;
+ #endif
+   }
++  void destroy_context(Device device) {
++#ifdef _WIN32
++    if (device == Device::CPU) {
++#ifdef CT2_WITH_RUY
++      cpu::clear_ruy_context();
++#endif
++#ifndef _OPENMP
++      cpu::clear_thread_pool();
++#endif
++    }
++#endif
++    (void)device;
++  }
++
+   // Initialize the static member variable
+ #ifdef CT2_WITH_TENSOR_PARALLEL
+     std::vector<ncclComm_t*> ScopedMPISetter::_nccl_comms;
+--- a/include/ctranslate2/replica_pool.h
++++ b/include/ctranslate2/replica_pool.h
+@@ -354,6 +354,7 @@
+ 
+     void finalize() override {
+       _replica.reset();
++      destroy_context(_device);
+     }
+ 
+   private:

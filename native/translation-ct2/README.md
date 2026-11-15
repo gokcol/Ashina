@@ -53,6 +53,13 @@ not required. Include the entire output in a `translation/` folder beside
 Upstream source commits are pinned in `CMakeLists.txt`:
 
 - CTranslate2 4.6.0: `617405f4b050e994e829d527da6caa0e0030afe7` (MIT).
+  `patches/windows-thread-cleanup.patch` backports the Windows RUY cleanup from
+  [upstream #2076](https://github.com/OpenNMT/CTranslate2/pull/2076) and applies
+  the same explicit cleanup to the non-OpenMP BS thread pool. Worker pools are
+  destroyed before thread exit; the bridge also clears the model-loading thread's
+  pools on success and failure. Mac retains thread-local RAII. The patch is
+  checked against the pinned sources, and CI tests five translate/destroy/unload
+  cycles on each Windows architecture with a timeout.
 - SentencePiece 0.2.0: `17d7580d6407802f85855d2cc9190634e2c95624` (Apache 2.0).
 - CTranslate2's recursive submodules are pinned by that commit.
 - Windows ARM64 overrides RUY's old cpuinfo submodule with upstream

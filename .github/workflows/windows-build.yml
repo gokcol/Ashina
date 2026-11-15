@@ -83,17 +83,14 @@ jobs:
         with:
           path: dist/translation/windows-${{ matrix.arch }}
           key: ${{ steps.translation-cache.outputs.cache-primary-key }}
-      - name: Build optimized ARM64 translation test
-        if: matrix.arch == 'arm64'
+      - name: Build optimized translation test
         shell: pwsh
         run: '& ./scripts/test-translation-smoke.ps1 -Stage Build -Architecture $env:MYPDF_ARCH'
       - name: Download and verify approved translation model
-        if: matrix.arch == 'arm64'
         timeout-minutes: 12
         shell: pwsh
         run: '& ./scripts/test-translation-smoke.ps1 -Stage Download -Architecture $env:MYPDF_ARCH'
-      - name: Verify real ARM64 offline translation
-        if: matrix.arch == 'arm64'
+      - name: Verify offline translation and repeated engine shutdown
         timeout-minutes: 5
         shell: pwsh
         run: '& ./scripts/test-translation-smoke.ps1 -Stage Translate -Architecture $env:MYPDF_ARCH'

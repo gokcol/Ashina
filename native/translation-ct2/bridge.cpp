@@ -20,10 +20,21 @@ struct Engine {
 };
 using Cancelled = bool (*)(void*);
 
+// Model loading also uses CPU pools on the calling thread. Release these before
+// returning to Rust, including failures, while outside Windows' loader lock.
+struct CallingThreadCleanup {
+  ~CallingThreadCleanup() {
+#ifdef _WIN32
+    ctranslate2::destroy_context(ctranslate2::Device::CPU);
+#endif
+  }
+};
+
 API unsigned mypdf_ct2_abi() { return 1; }
 
 // Error codes are deliberately content-free. Exceptions never cross the ABI.
 API void* mypdf_ct2_create(const char* model, const char* tokenizer) {
+  const CallingThreadCleanup cleanup;
   try {
     if (!model || !tokenizer) return nullptr;
     auto engine = std::make_unique<Engine>();

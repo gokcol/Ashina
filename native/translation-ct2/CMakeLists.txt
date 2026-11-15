@@ -9,6 +9,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 include(FetchContent)
+find_package(Git REQUIRED)
 
 # RUY accepts an existing cpuinfo target. Its old bundled revision lacks the
 # Windows ARM ISA implementation; use upstream's native detector on ARM only.
@@ -42,7 +43,11 @@ endif()
 FetchContent_Declare(ctranslate2
   GIT_REPOSITORY https://github.com/OpenNMT/CTranslate2.git
   GIT_TAG 617405f4b050e994e829d527da6caa0e0030afe7
-  GIT_SUBMODULES_RECURSE TRUE)
+  GIT_SUBMODULES_RECURSE TRUE
+  PATCH_COMMAND ${CMAKE_COMMAND}
+    "-DGIT_EXECUTABLE=${GIT_EXECUTABLE}" "-DSOURCE_DIR=<SOURCE_DIR>"
+    "-DPATCH_FILE=${CMAKE_CURRENT_SOURCE_DIR}/patches/windows-thread-cleanup.patch"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/patches/apply.cmake")
 FetchContent_MakeAvailable(ctranslate2)
 
 set(SPM_ENABLE_SHARED OFF CACHE BOOL "" FORCE)
