@@ -31,6 +31,18 @@ Visual Studio 2026 requires CMake 4.2 or later:
 ARM64 output is isolated in `dist/translation/windows-arm64/`. ClangCL supports
 the pinned RUY ARM vector/assembly kernels while preserving the Windows MSVC ABI.
 Packaging checks the PE machine type and loads the DLL in native PowerShell.
+The optional real-model check uses a fresh `artifacts/Translation Türkçe review`
+directory. It downloads only the approved English → French test pack and uses
+synthetic text. Run its stages in order (release mode matches the shipped code):
+
+```powershell
+./scripts/test-translation-smoke.ps1 -Stage Build -Architecture arm64
+./scripts/test-translation-smoke.ps1 -Stage Download -Architecture arm64
+./scripts/test-translation-smoke.ps1 -Stage Translate -Architecture arm64
+```
+
+The Download stage refuses an existing test directory; move that test directory
+aside before repeating the complete check.
 
 The output is `dist/translation/windows-x64/`: one `mypdf_ct2.dll`, its checksum,
 and license notices. CTranslate2, SentencePiece, and the CPU RUY backend are

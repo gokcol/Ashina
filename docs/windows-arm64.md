@@ -19,7 +19,10 @@ downloads. The feature guide and dependency notices are included in both formats
 Validation runs the Rust tests on ARM64, checks DLL loading and ABI, rejects a
 deliberately mismatched DLL, performs real OCR on a synthetic scanned PDF, and
 translates synthetic text with one explicitly downloaded, checksum-verified
-language pack. No user documents or recordings are used.
+language pack. The real model checks use release-mode code, separate timed
+download/inference steps, and print progress without document content. Verified
+native dependencies are cached before later checks so a failed validation does
+not discard their successful builds. No user documents or recordings are used.
 
 For Windows on ARM in Parallels on Apple Silicon, use the ARM64 build. Ordinary
 Intel/AMD Windows PCs need x64. Architecture alone does not solve graphics

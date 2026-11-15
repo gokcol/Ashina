@@ -848,52 +848,60 @@ mod tests {
     #[ignore = "Explicit network opt-in downloads one approved offline language pack"]
     fn explicit_language_download_verifies_and_installs_the_approved_pack() {
         assert_eq!(std::env::var("MYPDF_CT2_DOWNLOAD_TEST").as_deref(), Ok("1"));
-        let root = tempfile::tempdir().unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let root = if let Some(path) = std::env::var_os("MYPDF_CT2_TEST_ROOT") {
+            let root = PathBuf::from(path);
+            assert!(!root.exists(), "Use a fresh explicit test model directory");
+            root
+        } else {
+            temporary.path().to_path_buf()
+        };
         let pack = pack_for("en", "fr").unwrap().unwrap();
         let token = AtomicBool::new(false);
         let progress = Mutex::new(0);
-        download(root.path(), &pack, &token, &|event| {
-            if let Event::Progress { completed, .. } = event {
+        let bucket = std::cell::Cell::new(usize::MAX);
+        eprintln!(
+            "Downloading approved English → French pack ({} bytes)",
+            pack.bytes
+        );
+        download(&root, &pack, &token, &|event| {
+            if let Event::Progress { completed, total } = event {
                 *progress.lock().unwrap() = completed;
+                let next = completed * 4 / total.max(1);
+                if bucket.replace(next) != next {
+                    eprintln!("Language download: {}%", next * 25);
+                }
             }
         })
         .unwrap();
+        eprintln!("Download and extraction complete; verifying installed files");
         assert_eq!(*progress.lock().unwrap(), pack.bytes as usize);
-        assert!(installed(root.path(), &pack));
-        verify_installed(root.path(), &pack, &token).unwrap();
+        assert!(installed(&root, &pack));
+        verify_installed(&root, &pack, &token).unwrap();
+        eprintln!("Language pack verification passed");
     }
     #[test]
-    #[ignore = "Requires a compiled native bridge and explicit network opt-in for one approved pack"]
+    #[ignore = "Requires a compiled native bridge and an explicitly prepared test model directory"]
     fn native_translation_smoke_downloaded_pack() {
-        assert_eq!(std::env::var("MYPDF_CT2_DOWNLOAD_TEST").as_deref(), Ok("1"));
-        let root = tempfile::Builder::new()
-            .prefix("MyPDF-İstanbul-ß-")
-            .tempdir()
-            .unwrap();
+        let root = PathBuf::from(
+            std::env::var_os("MYPDF_CT2_TEST_ROOT").expect("explicit test model directory"),
+        );
         let pack = pack_for("en", "fr").unwrap().unwrap();
         let token = AtomicBool::new(false);
-        download(root.path(), &pack, &token, &|_| {}).unwrap();
-        verify_installed(root.path(), &pack, &token).unwrap();
-        let output = Mutex::new(String::new());
-        run(
-            Operation::Translate {
-                source: "en".into(),
-                target: "fr".into(),
-                texts: vec!["This is a test.".into()],
-            },
-            root.path(),
-            &token,
-            |event| {
-                if let Event::Translated { text, .. } = event {
-                    *output.lock().unwrap() = text;
-                }
-            },
-        )
-        .unwrap();
-        let output = output.into_inner().unwrap();
+        eprintln!("Verifying installed model before inference");
+        verify_installed(&root, &pack, &token).unwrap();
+        eprintln!("Loading native translation library");
+        let runtime = Runtime::load().unwrap();
+        eprintln!("Creating native translation engine");
+        let engine = runtime.engine(&root.join(pack.key())).unwrap();
+        eprintln!("Translating synthetic text");
+        let output = engine.translate("This is a test.", &token).unwrap();
         assert_ne!(output, "This is a test.");
         assert!(output.to_lowercase().contains("test"), "{output}");
         println!("Native synthetic English → French: {output}");
+        eprintln!("Shutting down native engine");
+        drop(engine);
+        eprintln!("Native translation smoke test passed");
     }
     #[test]
     #[ignore = "Requires a compiled native bridge and explicitly downloaded test packs"]

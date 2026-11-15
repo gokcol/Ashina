@@ -27,7 +27,7 @@ jobs:
       matrix:
         arch: ${{ fromJSON(inputs.architecture == 'both' && '["x64","arm64"]' || inputs.architecture == 'arm64' && '["arm64"]' || '["x64"]') }}
     runs-on: ${{ matrix.arch == 'arm64' && 'windows-11-arm' || 'windows-2022' }}
-    timeout-minutes: 60
+    timeout-minutes: 75
     env:
       MYPDF_ARCH: ${{ matrix.arch }}
     steps:
@@ -40,6 +40,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: windows-${{ matrix.arch }}
+          cache-on-failure: true
       - uses: actions/setup-python@v6
         if: matrix.arch == 'x64'
         with:
@@ -55,17 +56,14 @@ jobs:
           if ((rustc -vV) -notcontains "host: $expected") { throw "Expected native Rust host $expected" }
           if ([Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString() -ine $env:MYPDF_ARCH) { throw 'PowerShell must run natively for DLL tests.' }
           cmake --version
-      - name: Cache offline OCR bundle
-        id: ocr-cache
-        uses: actions/cache@v4
+      - name: Restore native translation runtime
+        id: translation-cache
+        uses: actions/cache/restore@v4
         with:
-          path: dist/ocr/windows-${{ matrix.arch }}
-          key: windows-ocr-${{ matrix.arch }}-${{ hashFiles('scripts/build-ocr-windows.ps1', 'packaging/windows/ocr/**') }}
-      - name: Build offline OCR runtime and language models
-        if: steps.ocr-cache.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: '& ./scripts/build-ocr-windows.ps1 -Architecture $env:MYPDF_ARCH'
-      - name: Build and verify offline translation runtime
+          path: dist/translation/windows-${{ matrix.arch }}
+          key: windows-translation-${{ matrix.arch }}-${{ hashFiles('native/translation-ct2/**', 'scripts/build-translation-windows.ps1') }}
+      - name: Build native translation runtime
+        if: steps.translation-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $options = @{ Architecture = $env:MYPDF_ARCH }
@@ -74,8 +72,47 @@ jobs:
             $options.Toolset = 'ClangCL'
           }
           & ./scripts/build-translation-windows.ps1 @options
+      - name: Verify native translation runtime and packaging
+        shell: pwsh
+        run: |
           & ./scripts/test-translation-runtime.ps1 -Architecture $env:MYPDF_ARCH
           & ./scripts/test-translation-packaging.ps1 -Architecture $env:MYPDF_ARCH
+      - name: Save verified translation runtime
+        if: steps.translation-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: dist/translation/windows-${{ matrix.arch }}
+          key: ${{ steps.translation-cache.outputs.cache-primary-key }}
+      - name: Build optimized ARM64 translation test
+        if: matrix.arch == 'arm64'
+        shell: pwsh
+        run: '& ./scripts/test-translation-smoke.ps1 -Stage Build -Architecture $env:MYPDF_ARCH'
+      - name: Download and verify approved translation model
+        if: matrix.arch == 'arm64'
+        timeout-minutes: 12
+        shell: pwsh
+        run: '& ./scripts/test-translation-smoke.ps1 -Stage Download -Architecture $env:MYPDF_ARCH'
+      - name: Verify real ARM64 offline translation
+        if: matrix.arch == 'arm64'
+        timeout-minutes: 5
+        shell: pwsh
+        run: '& ./scripts/test-translation-smoke.ps1 -Stage Translate -Architecture $env:MYPDF_ARCH'
+      - name: Restore offline OCR bundle
+        id: ocr-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: dist/ocr/windows-${{ matrix.arch }}
+          key: windows-ocr-${{ matrix.arch }}-${{ hashFiles('scripts/build-ocr-windows.ps1', 'packaging/windows/ocr/**') }}
+      - name: Build offline OCR runtime and language models
+        if: steps.ocr-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: '& ./scripts/build-ocr-windows.ps1 -Architecture $env:MYPDF_ARCH'
+      - name: Save verified OCR bundle
+        if: steps.ocr-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: dist/ocr/windows-${{ matrix.arch }}
+          key: ${{ steps.ocr-cache.outputs.cache-primary-key }}
       - run: cargo build --locked --release --bin mypdf --example ocr_smoke
       - name: Check native executable architecture
         shell: pwsh
@@ -83,14 +120,6 @@ jobs:
       - name: Test ARM64 app logic
         if: matrix.arch == 'arm64'
         run: cargo test --locked --no-fail-fast
-      - name: Verify real ARM64 offline translation
-        if: matrix.arch == 'arm64'
-        shell: pwsh
-        run: |
-          $env:MYPDF_CT2_LIBRARY = "$pwd/dist/translation/windows-arm64/mypdf_ct2.dll"
-          $env:MYPDF_CT2_DOWNLOAD_TEST = '1'
-          cargo test --locked --lib translation::ctranslate::tests::native_translation_smoke_downloaded_pack -- --ignored --nocapture
-          if ($LASTEXITCODE -ne 0) { throw 'Native ARM64 translation inference failed.' }
       - name: Verify real offline OCR on a scanned PDF
         shell: pwsh
         run: |
