@@ -10,6 +10,22 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 include(FetchContent)
 
+# RUY accepts an existing cpuinfo target. Its old bundled revision lacks the
+# Windows ARM ISA implementation; use upstream's native detector on ARM only.
+if(WIN32 AND CMAKE_GENERATOR_PLATFORM STREQUAL "ARM64")
+  set(CPUINFO_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+  set(CPUINFO_BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)
+  set(CPUINFO_BUILD_MOCK_TESTS OFF CACHE BOOL "" FORCE)
+  set(CPUINFO_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+  set(CPUINFO_BUILD_PKG_CONFIG OFF CACHE BOOL "" FORCE)
+  set(CPUINFO_LIBRARY_TYPE static CACHE STRING "" FORCE)
+  set(CPUINFO_RUNTIME_TYPE static CACHE STRING "" FORCE)
+  FetchContent_Declare(cpuinfo
+    GIT_REPOSITORY https://github.com/pytorch/cpuinfo.git
+    GIT_TAG 3ce3d87adef69f04e196e25b7f754028d12750c4)
+  FetchContent_MakeAvailable(cpuinfo)
+endif()
+
 # Pin source revisions, including CTranslate2's own pinned submodules.
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(BUILD_CLI OFF CACHE BOOL "" FORCE)
@@ -48,6 +64,9 @@ install(TARGETS mypdf_ct2
   LIBRARY DESTINATION . COMPONENT MyPDFTranslation)
 install(FILES ${ctranslate2_SOURCE_DIR}/LICENSE DESTINATION licenses RENAME CTranslate2.txt COMPONENT MyPDFTranslation)
 install(FILES ${sentencepiece_SOURCE_DIR}/LICENSE DESTINATION licenses RENAME SentencePiece.txt COMPONENT MyPDFTranslation)
+if(WIN32 AND CMAKE_GENERATOR_PLATFORM STREQUAL "ARM64")
+  install(FILES ${cpuinfo_SOURCE_DIR}/LICENSE DESTINATION licenses RENAME cpuinfo-ARM64.txt COMPONENT MyPDFTranslation)
+endif()
 install(DIRECTORY ${ctranslate2_SOURCE_DIR}/third_party/ DESTINATION licenses/CTranslate2-dependencies
   COMPONENT MyPDFTranslation FILES_MATCHING PATTERN "LICENSE*" PATTERN "COPYING*" PATTERN "COPYRIGHT*" PATTERN "NOTICE*")
 install(DIRECTORY ${sentencepiece_SOURCE_DIR}/third_party/ DESTINATION licenses/SentencePiece-dependencies

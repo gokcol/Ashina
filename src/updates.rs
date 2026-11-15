@@ -50,6 +50,7 @@ pub enum Channel {
     MacArm,
     MacIntel,
     Windows,
+    WindowsArm,
     Store,
 }
 impl Channel {
@@ -57,6 +58,7 @@ impl Channel {
         match self {
             Self::MacArm | Self::MacIntel => "GitHub · Mac",
             Self::Windows => "GitHub · Windows",
+            Self::WindowsArm => "GitHub · Windows ARM64",
             Self::Store => "Microsoft Store",
         }
     }
@@ -132,6 +134,7 @@ fn matches_platform(name: &str, channel: Channel) -> bool {
                     .any(|s| name.contains(s))
         }
         Channel::Windows => name.ends_with("-setup.exe") && !name.contains("arm64"),
+        Channel::WindowsArm => name.ends_with("-setup-arm64.exe"),
         Channel::Store => false,
     }
 }
@@ -259,7 +262,11 @@ pub fn prepare(window: Option<isize>) -> Result<PendingCheck> {
     if identity.0 == 15700 {
         // APPMODEL_ERROR_NO_PACKAGE: standalone EXE installation.
         return Ok(Box::pin(github(
-            Channel::Windows,
+            if cfg!(target_arch = "aarch64") {
+                Channel::WindowsArm
+            } else {
+                Channel::Windows
+            },
             env!("CARGO_PKG_VERSION"),
         )));
     }
@@ -364,6 +371,31 @@ mod tests {
                 .as_deref(),
             Some("3.0.0")
         );
+    }
+    #[test]
+    fn windows_updates_keep_the_installed_architecture() {
+        let mut both = release("v3.1.2", "MyPDF-3.1.2-Setup.exe");
+        both["assets"]
+            .as_array_mut()
+            .unwrap()
+            .push(release("v3.1.2", "MyPDF-3.1.2-Setup-arm64.exe")["assets"][0].clone());
+        let bytes =
+            serde_json::to_vec(&vec![both, release("v3.1.3", "MyPDF-3.1.3-Setup.exe")]).unwrap();
+        let arm = github_report(&bytes, Channel::WindowsArm, "3.1.1")
+            .unwrap()
+            .available
+            .unwrap();
+        assert_eq!(arm.version.as_deref(), Some("3.1.2"));
+        assert!(arm.url.ends_with("MyPDF-3.1.2-Setup-arm64.exe"));
+        let x64 = github_report(&bytes, Channel::Windows, "3.1.1")
+            .unwrap()
+            .available
+            .unwrap();
+        assert_eq!(x64.version.as_deref(), Some("3.1.3"));
+        assert!(x64.url.ends_with("MyPDF-3.1.3-Setup.exe"));
+        let arm_only =
+            serde_json::to_vec(&vec![release("v3.1.2", "MyPDF-3.1.2-Setup-arm64.exe")]).unwrap();
+        assert!(github_report(&arm_only, Channel::Windows, "3.1.1").is_err());
     }
     #[test]
     fn bundled_notes_match_the_current_version() {

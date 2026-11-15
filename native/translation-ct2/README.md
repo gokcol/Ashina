@@ -43,6 +43,10 @@ Upstream source commits are pinned in `CMakeLists.txt`:
 - CTranslate2 4.6.0: `617405f4b050e994e829d527da6caa0e0030afe7` (MIT).
 - SentencePiece 0.2.0: `17d7580d6407802f85855d2cc9190634e2c95624` (Apache 2.0).
 - CTranslate2's recursive submodules are pinned by that commit.
+- Windows ARM64 overrides RUY's old cpuinfo submodule with upstream
+  `3ce3d87adef69f04e196e25b7f754028d12750c4` (BSD-2-Clause), which supports
+  Windows ARM CPU feature detection. Its license is included in the package.
+  x64 and Mac keep the original pinned dependency.
 
 The x64 job retains CMake 3.31.6; ARM64 uses the runner's CMake with the compatibility
 policy required by the pinned dependencies. CMake/Ninja/Python used by CI are

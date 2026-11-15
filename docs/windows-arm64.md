@@ -8,6 +8,8 @@ build; artifacts remain attached to its workflow run.
 ARM64 packages are named `MyPDF-<version>-windows-arm64.zip` and
 `MyPDF-<version>-Setup-arm64.exe`, each with a SHA-256 checksum. The existing
 x64 filenames remain unchanged. The ARM installer accepts ARM64 Windows only.
+Standalone update checks retain the installed architecture and never offer an
+x64 installer to the ARM64 app.
 
 The application, bundled Tesseract executable and CTranslate2/SentencePiece DLL
 are built for the same architecture and checked before packaging. English,

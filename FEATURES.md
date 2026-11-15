@@ -1,6 +1,6 @@
 # MyPDF feature guide
 
-**Release: 3.1.1** · macOS (Apple Silicon) and Windows (x64)
+**Release: 3.1.1** · macOS (Apple Silicon) and Windows (x64 and ARM64)
 
 MyPDF is a native desktop PDF editor for local documents. Its main workspaces are **Read, Annotate, Edit, Draw, Forms, Sign, Pages and Export**. Contextual controls appear in the right panel; tool variations share compact menus that open on hover, click or tap.
 
@@ -170,7 +170,7 @@ Visible sensitive information must be redacted first. Full cleanup removes searc
 - XFA forms are not supported. Standard AcroForms are supported within the documented field capabilities.
 - A black shape, cropped area or blurred image is not secure redaction.
 - Readers differ in support for interactive attachments, review details and editable appearances.
-- Published desktop packages target Apple Silicon Macs and Windows x64. The separate iPad development preview does not have full desktop parity.
+- Published desktop packages target Apple Silicon Macs and Windows x64 / ARM64. Use ARM64 for Windows on ARM, including Parallels on Apple Silicon; use x64 for Intel/AMD PCs. Microsoft Store packaging currently remains x64. The separate iPad development preview does not have full desktop parity.
 
 ## Feature freeze
 

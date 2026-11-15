@@ -10,13 +10,13 @@ on:
         description: Branch or tag to build
         default: main
       release:
-        description: Attach the zip to this release tag (leave empty for a test build)
+        description: Attach packages to this release tag (leave empty for a test build)
         default: ""
       architecture:
         description: Windows processor architecture
         type: choice
         options: [x64, arm64, both]
-        default: x64
+        default: both
 permissions:
   contents: write
 jobs:
