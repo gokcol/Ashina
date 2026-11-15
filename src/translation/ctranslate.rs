@@ -863,6 +863,39 @@ mod tests {
         verify_installed(root.path(), &pack, &token).unwrap();
     }
     #[test]
+    #[ignore = "Requires a compiled native bridge and explicit network opt-in for one approved pack"]
+    fn native_translation_smoke_downloaded_pack() {
+        assert_eq!(std::env::var("MYPDF_CT2_DOWNLOAD_TEST").as_deref(), Ok("1"));
+        let root = tempfile::Builder::new()
+            .prefix("MyPDF-İstanbul-ß-")
+            .tempdir()
+            .unwrap();
+        let pack = pack_for("en", "fr").unwrap().unwrap();
+        let token = AtomicBool::new(false);
+        download(root.path(), &pack, &token, &|_| {}).unwrap();
+        verify_installed(root.path(), &pack, &token).unwrap();
+        let output = Mutex::new(String::new());
+        run(
+            Operation::Translate {
+                source: "en".into(),
+                target: "fr".into(),
+                texts: vec!["This is a test.".into()],
+            },
+            root.path(),
+            &token,
+            |event| {
+                if let Event::Translated { text, .. } = event {
+                    *output.lock().unwrap() = text;
+                }
+            },
+        )
+        .unwrap();
+        let output = output.into_inner().unwrap();
+        assert_ne!(output, "This is a test.");
+        assert!(output.to_lowercase().contains("test"), "{output}");
+        println!("Native synthetic English → French: {output}");
+    }
+    #[test]
     #[ignore = "Requires a compiled native bridge and explicitly downloaded test packs"]
     fn native_translation_smoke_all_required_pairs() {
         let downloads = PathBuf::from(

@@ -18,6 +18,20 @@ On Windows x64, install Visual Studio 2022 C++ tools, Git, and CMake 3.31.6:
 ./scripts/test-translation-runtime.ps1
 ```
 
+For native Windows ARM64, use an ARM64 PowerShell session and Visual Studio's
+ARM64 C++ and ClangCL components. The build detects Visual Studio 2022/2026;
+Visual Studio 2026 requires CMake 4.2 or later:
+
+```powershell
+./scripts/build-translation-windows.ps1 -Architecture arm64 -Generator auto -Toolset ClangCL
+./scripts/test-translation-runtime.ps1 -Architecture arm64
+./scripts/test-translation-packaging.ps1 -Architecture arm64
+```
+
+ARM64 output is isolated in `dist/translation/windows-arm64/`. ClangCL supports
+the pinned RUY ARM vector/assembly kernels while preserving the Windows MSVC ABI.
+Packaging checks the PE machine type and loads the DLL in native PowerShell.
+
 The output is `dist/translation/windows-x64/`: one `mypdf_ct2.dll`, its checksum,
 and license notices. CTranslate2, SentencePiece, and the CPU RUY backend are
 statically linked, including the MSVC runtime. CUDA, MKL, oneDNN and Python are
@@ -30,8 +44,9 @@ Upstream source commits are pinned in `CMakeLists.txt`:
 - SentencePiece 0.2.0: `17d7580d6407802f85855d2cc9190634e2c95624` (Apache 2.0).
 - CTranslate2's recursive submodules are pinned by that commit.
 
-CMake 4 is not the tested toolchain. CMake/Ninja/Python used by CI are build tools,
-not application runtime dependencies.
+The x64 job retains CMake 3.31.6; ARM64 uses the runner's CMake with the compatibility
+policy required by the pinned dependencies. CMake/Ninja/Python used by CI are
+build tools, not application runtime dependencies.
 
 ## Language packs
 
