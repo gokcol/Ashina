@@ -10,7 +10,7 @@ Version **3.1.1**, Mac build **244**, is [available for macOS and Windows](https
 
 Version **3.1.0**, Mac build **235**, adds reliable annotation manipulation, font controls for annotation text, and a visual stamp designer with border templates, colors and transparency. It includes configurable touch controls, customizable Home, polished Settings and About, A4 page sizing, image fitting, OCR, table editing, metadata and saving improvements. [Downloads and full release notes](https://github.com/gokcol/MyPDF/releases/tag/v3.1.0).
 
-[SkyPDF (formerly MyPDF) on Microsoft Store](https://apps.microsoft.com/detail/9MXR0WLW42XT) is the same Store product previously listed as MyPDF (OG). The 3.1.2.0 rename is being prepared for certification; the new Store name appears after Microsoft approves the submission.
+[SkyPDF (formerly MyPDF) on Microsoft Store](https://apps.microsoft.com/detail/9MXR0WLW42XT) is the same Store product previously listed as MyPDF (OG). Version 3.1.2.0 was submitted on November 15, 2026 and is in certification, with automatic publishing after approval. The new Store name will appear after Microsoft publishes the update.
 
 Version **2.4.2**, Mac build **212**, fixes Save and autosave rejecting text boxes that look correct on screen. PDF annotation text now uses the editor’s layout engine and preserves visible overflow without shrinking text. Includes the file insertion and image editing improvements from 2.4.1. [Downloads](https://github.com/gokcol/MyPDF/releases/tag/v2.4.2).
 

@@ -1,7 +1,9 @@
 SkyPDF 3.1.2
 
-• MyPDF is now SkyPDF. The Microsoft Store listing uses SkyPDF (formerly MyPDF) so existing users can recognize the app.
-• The new name appears in the app, menus, About, installers and release downloads. Existing settings, artwork, signatures, review files and editable PDF objects remain compatible.
-• Windows downloads include native x64 and ARM64 builds, with offline English, Turkish and German OCR and a native translation runtime.
-• Fixed a Windows offline-translation shutdown hang; repeated translation jobs now release their worker threads cleanly.
+• MyPDF is now SkyPDF (formerly MyPDF) on Microsoft Store. Your existing settings, stamps, signatures, review files and editable PDF objects remain compatible.
+• The new name appears in the app, menus, About and installers. This is an update to the same Store app; no new account or migration is required.
+• Fixed a Windows offline-translation shutdown hang. Repeated translation jobs now release worker threads cleanly.
+• Includes offline English, Turkish and German OCR. Native x64 and ARM64 downloads are also available on GitHub; this Store package is x64.
 • Continues the 3.1 feature freeze, focused on reliability and performance.
+
+Also includes threaded note replies, voice notes, revision tools, Prepare for Sharing, touch controls, customizable Home and the visual stamp editor.

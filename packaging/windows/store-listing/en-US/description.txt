@@ -25,9 +25,11 @@ ORGANIZE YOUR PAGES
 Reorder, insert, delete, extract, merge, split, rotate, and crop pages. New blank and image-created pages default to A4. Resize individual pages without scaling their contents; inserted images fit the page proportionally. Export multiple PDF pages onto each sheet using preset or custom grids, with adjustable margins, headers, footers, and watermarks.
 
 CONVERT AND KEEP WORK MOVING
+Drag and drop files or use File → Insert Files to add PDFs, images, TXT, Markdown, SVG, DOCX and RTF to existing or new PDFs. TIFF imports all pages; animated GIF and WebP use the first frame. DOCX/RTF import requires installed Microsoft Word or LibreOffice, and Windows HEIC/HEIF import requires the HEIF codec. No document converter is downloaded.
 Convert images to PDF and use the compact Export ribbon for Word, Text, Markdown and Image, with advanced options in the side panel. Export pages as PNG or JPEG. Use undo, safe saving, and local recovery copies while you work.
 
 EVERYDAY WORKFLOWS
+View and edit document metadata through File → Document Properties, with Undo/Redo and saved PDF Info/XMP synchronization.
 Reuse local document templates, batch-compress PDFs or add page numbers and watermarks, and prepare separate sharing copies with selected comments, attachments and metadata removed. Match nearby text styling and align objects using optional table and baseline guides.
 
 TRANSLATE ON YOUR COMPUTER
@@ -36,4 +38,4 @@ Translate selected text or pages locally using downloadable language packs, with
 LOCAL BY DESIGN
 SkyPDF has no advertising, usage analytics, or automatic document uploads. Settings, custom stamps, signatures, and recovery data stay in local application storage. You choose where to save and share your files.
 
-Text editing depends on the PDF's structure and fonts. Markdown and Word conversions focus on text and may not preserve complex layouts. Certificate trust depends on the recipient's PDF viewer and trust settings. Windows includes offline OCR for English, Turkish and German. Select pages to recognize, review or copy the results, and save a searchable PDF.
+Text editing depends on the PDF's structure and fonts. Markdown and Word exports focus on text and may not preserve complex layouts. DOCX/RTF imports use the installed office application to preserve layout. Certificate trust depends on the recipient's PDF viewer and trust settings. Recognize text on selected scanned pages with offline OCR in English, Turkish and German. Review the completion summary, then search or select recognized text.

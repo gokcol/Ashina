@@ -1,5 +1,5 @@
 01-read.png
-Read PDFs in a native workspace with tabs, page thumbnails, text search, and flexible zoom.
+Read PDFs in a native workspace with tabs, text search, and flexible zoom.
 
 02-stamps.png
 Annotate documents with standard stamps, custom artwork, notes, and drawing tools.
