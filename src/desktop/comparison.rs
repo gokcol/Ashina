@@ -23,7 +23,7 @@ pub(super) struct Comparison {
     pub selected: Option<usize>,
     /// Scroll both versions (and the list) to the selected change.
     reveal: bool,
-    /// Some pages had more text than MyPDF reads.
+    /// Some pages had more text than SkyPDF reads.
     limited: bool,
 }
 impl Comparison {
@@ -493,7 +493,7 @@ impl Viewer {
                     let result =
                         std::panic::catch_unwind(|| mypdf_milestone0::compare::compare(&old, &new))
                             .unwrap_or_else(|_| {
-                                Err("MyPDF could not compare these documents.".into())
+                                Err("SkyPDF could not compare these documents.".into())
                             });
                     let _ = tx.send(result);
                     wake.request_repaint();
@@ -513,7 +513,7 @@ impl Viewer {
                 }
                 Err(mpsc::TryRecvError::Disconnected) => {
                     c.job = None;
-                    c.result = Some(Err("MyPDF could not compare these documents.".into()));
+                    c.result = Some(Err("SkyPDF could not compare these documents.".into()));
                 }
                 Err(mpsc::TryRecvError::Empty) => {}
             }
@@ -724,7 +724,7 @@ impl Viewer {
                 });
                 if limited {
                     ui.add_space(6.);
-                    ui::callout(ui, ui::Tone::Warning, "Some pages have more text than MyPDF reads, so changes there may be missed.");
+                    ui::callout(ui, ui::Tone::Warning, "Some pages have more text than SkyPDF reads, so changes there may be missed.");
                 }
                 ui.add_space(8.);
                 if changes.is_empty() {

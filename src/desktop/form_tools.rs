@@ -1498,7 +1498,7 @@ impl Viewer {
             ui::tip(
                 ui,
                 "Build a form",
-                "Choose a field type in the toolbar, then drag on the page. Or let MyPDF find the blanks, boxes and lines for you.",
+                "Choose a field type in the toolbar, then drag on the page. Or let SkyPDF find the blanks, boxes and lines for you.",
             );
             if ui
                 .add_enabled(

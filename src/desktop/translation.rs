@@ -1395,7 +1395,7 @@ mod tests {
             Default::default(),
         );
         let foreign_pdf = annotations::export(&blank, &[foreign]).unwrap();
-        // Simulate another PDF editor's FreeText appearance, which MyPDF must
+        // Simulate another PDF editor's FreeText appearance, which SkyPDF must
         // keep when it replaces only its own annotation objects.
         let mut doc = lopdf::Document::load_mem(&foreign_pdf).unwrap();
         for object in doc.objects.values_mut() {

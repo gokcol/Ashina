@@ -1,8 +1,8 @@
-//! Files the system asks MyPDF to open: Open With, a PDF dropped on the Dock
-//! icon, or a double-click once MyPDF is the default PDF app.
+//! Files the system asks SkyPDF to open: Open With, a PDF dropped on the Dock
+//! icon, or a double-click once SkyPDF is the default PDF app.
 //!
-//! macOS sends them to the MyPDF that is already open. On Windows, Open With
-//! starts another MyPDF with the file; it hands the file to the one already
+//! macOS sends them to the SkyPDF that is already open. On Windows, Open With
+//! starts another SkyPDF with the file; it hands the file to the one already
 //! open and quits, so documents open as tabs in one window.
 use super::shell_menu::Action;
 use eframe::egui;
@@ -22,12 +22,12 @@ pub fn launch_request(args: Vec<std::ffi::OsString>) -> Result<Request, String> 
         .is_some_and(|arg| arg == super::shell_menu::ARGUMENT)
     {
         if args.len() != 2 {
-            return Err("Invalid MyPDF shortcut".into());
+            return Err("Invalid SkyPDF shortcut".into());
         }
         let action = args[1]
             .to_str()
             .and_then(Action::decode)
-            .ok_or("Invalid MyPDF shortcut")?;
+            .ok_or("Invalid SkyPDF shortcut")?;
         Ok(Request {
             paths: vec![],
             actions: vec![action],
@@ -110,7 +110,7 @@ pub(super) fn take(ctx: &egui::Context) -> Arrivals {
     std::mem::take(&mut *WAITING.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
-/// When another MyPDF is already open, give it these files (or just bring it
+/// When another SkyPDF is already open, give it these files (or just bring it
 /// to the front) and return true: this one should then quit.
 #[cfg(not(target_os = "macos"))]
 pub fn hand_over(request: &Request) -> bool {
@@ -121,9 +121,9 @@ pub fn hand_over(_: &Request) -> bool {
     false
 }
 
-/// Listen for files the system asks MyPDF to open. Call before the app
+/// Listen for files the system asks SkyPDF to open. Call before the app
 /// starts, so the files a launch was asked to open are not missed. (On
-/// Windows the installer lists MyPDF under Open With, when the user agrees.)
+/// Windows the installer lists SkyPDF under Open With, when the user agrees.)
 pub fn install() {
     #[cfg(target_os = "macos")]
     mac::install();
@@ -137,13 +137,13 @@ mod mailbox {
     use std::path::{Path, PathBuf};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-    /// Requests older than this were left behind when MyPDF quit.
+    /// Requests older than this were left behind when SkyPDF quit.
     const STALE: Duration = Duration::from_secs(30);
 
     pub(super) enum Claim {
-        /// This MyPDF receives files; the lock is held while it runs.
+        /// This SkyPDF receives files; the lock is held while it runs.
         Mine(Option<File>),
-        /// Another MyPDF is open.
+        /// Another SkyPDF is open.
         Taken,
     }
     pub(super) fn claim(root: &Path) -> Claim {
@@ -159,7 +159,7 @@ mod mailbox {
         match file.try_lock() {
             Ok(()) => Claim::Mine(Some(file)),
             Err(std::fs::TryLockError::WouldBlock) => Claim::Taken,
-            // Without file locks, each MyPDF opens its own window.
+            // Without file locks, each SkyPDF opens its own window.
             Err(std::fs::TryLockError::Error(_)) => Claim::Mine(None),
         }
     }
@@ -240,7 +240,7 @@ mod mailbox {
                 false
             }
             Claim::Taken => {
-                // Let the open MyPDF come to the front when it gets the files.
+                // Let the open SkyPDF come to the front when it gets the files.
                 #[cfg(windows)]
                 // SAFETY: no pointers; it only grants permission.
                 unsafe {
@@ -425,7 +425,7 @@ mod tests {
     fn a_second_mypdf_hands_its_files_to_the_open_one() {
         let root = tempfile::tempdir().unwrap();
         let mailbox::Claim::Mine(Some(_lock)) = mailbox::claim(root.path()) else {
-            panic!("the first MyPDF receives files");
+            panic!("the first SkyPDF receives files");
         };
         assert!(matches!(mailbox::claim(root.path()), mailbox::Claim::Taken));
         assert_eq!(mailbox::receive(root.path()), None);
@@ -447,7 +447,7 @@ mod tests {
             })
         );
         assert_eq!(mailbox::receive(root.path()), None, "taken once");
-        // A request left from a MyPDF that quit long ago is dropped.
+        // A request left from a SkyPDF that quit long ago is dropped.
         mailbox::send(
             root.path(),
             &Request {

@@ -645,7 +645,7 @@ impl DigitalState {
         };
         anyhow::ensure!(
             Sha256::digest(&before).as_slice() == self.catalogue_hash,
-            "The catalogue changed in another process. Restart MyPDF before saving identity references."
+            "The catalogue changed in another process. Restart SkyPDF before saving identity references."
         );
         let raw = serde_json::to_vec(&Catalogue {
             entries: self.entries.clone(),
@@ -844,11 +844,11 @@ enum Action {
     RemoveArtworkBackground(String, mypdf_milestone0::assets::Asset),
     /// Draw or type a signature and use it as the signature artwork.
     DrawArtwork,
-    /// Trust a certificate in MyPDF.
+    /// Trust a certificate in SkyPDF.
     TrustAdd(Vec<u8>),
-    /// Stop trusting a certificate in MyPDF (by SHA-256).
+    /// Stop trusting a certificate in SkyPDF (by SHA-256).
     TrustRemove(String),
-    /// Read a .cer/.crt/.pem file and trust it in MyPDF.
+    /// Read a .cer/.crt/.pem file and trust it in SkyPDF.
     TrustImport,
     /// Export a trusted certificate (by SHA-256).
     TrustExport(String),
@@ -897,7 +897,7 @@ fn platform_trust(der: &[u8], trust: bool) -> anyhow::Result<()> {
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = (der, trust);
-        anyhow::bail!("This system has no certificate trust store MyPDF can change")
+        anyhow::bail!("This system has no certificate trust store SkyPDF can change")
     }
 }
 
@@ -910,7 +910,7 @@ fn platform_import(pkcs12: &[u8], password: &str) -> anyhow::Result<()> {
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = (pkcs12, password);
-        anyhow::bail!("This system has no certificate store MyPDF can add to")
+        anyhow::bail!("This system has no certificate store SkyPDF can add to")
     }
 }
 
@@ -1587,7 +1587,7 @@ impl Viewer {
                         ui.add_space(8.);
                         ui::settings_group(ui, Icon::Reload, "App updates", |ui| {
                             ui.horizontal_wrapped(|ui| {
-                                ui.label(RichText::new(format!("MyPDF {}", env!("CARGO_PKG_VERSION"))).color(theme::muted()));
+                                ui.label(RichText::new(format!("SkyPDF {}", env!("CARGO_PKG_VERSION"))).color(theme::muted()));
                                 if ui.add(ActionButton::new(Icon::Redo, "App updates & What's New…")).clicked() { self.updates.show(false); }
                             });
                         });
@@ -1708,7 +1708,7 @@ impl Viewer {
                                     },
                                 );
                                 ui.label(
-                                    RichText::new("A personal ID is self-signed: MyPDF and this computer can trust it, but other people's apps (such as Adobe Acrobat) trust it only after they add your certificate.")
+                                    RichText::new("A personal ID is self-signed: SkyPDF and this computer can trust it, but other people's apps (such as Adobe Acrobat) trust it only after they add your certificate.")
                                         .small()
                                         .color(theme::muted()),
                                 );
@@ -2001,7 +2001,7 @@ impl Viewer {
                                 }
                                 if caps.needs_signing_preparation {
                                     if caps.signed {
-                                        ui::callout(ui, ui::Tone::Danger, "MyPDF cannot add another digital signature to this already-signed PDF format yet. This is a document-format limitation, not a certificate error. Use the unsigned original, or an editor that can append a signature to this file; rewriting it would invalidate its existing signatures.");
+                                        ui::callout(ui, ui::Tone::Danger, "SkyPDF cannot add another digital signature to this already-signed PDF format yet. This is a document-format limitation, not a certificate error. Use the unsigned original, or an editor that can append a signature to this file; rewriting it would invalidate its existing signatures.");
                                     } else {
                                         ui.checkbox(&mut self.digital.prepare, "Prepare an unsigned signing copy (required for this PDF)");
                                     }
@@ -2030,13 +2030,13 @@ impl Viewer {
                     }
                     Panel::Trusted => {
                         ui.label(
-                            RichText::new("Signatures from these certificates show as trusted in MyPDF. You can add a certificate here or from a signature's details.")
+                            RichText::new("Signatures from these certificates show as trusted in SkyPDF. You can add a certificate here or from a signature's details.")
                                 .color(theme::muted()),
                         );
                         if let Some(system) = mypdf_milestone0::trust::system_name() {
                             ui.label(
                                 RichText::new(format!(
-                                    "MyPDF also trusts what {system} trusts: its built-in root certificates and any certificate you mark “Always Trust”{}.",
+                                    "SkyPDF also trusts what {system} trusts: its built-in root certificates and any certificate you mark “Always Trust”{}.",
                                     if cfg!(target_os = "macos") { " in Keychain Access" } else { " in your certificate stores" }
                                 ))
                                 .small()
@@ -2463,7 +2463,7 @@ impl Viewer {
             ),
             Some(c) if c.encrypted => Some("Encrypted PDFs cannot be signed here."),
             Some(c) if c.signed && c.needs_signing_preparation => Some(
-                "MyPDF cannot add another digital signature to this already-signed PDF format yet. This is a document-format limitation, not a certificate error. Use the unsigned original, or an editor that can append a signature to this file; rewriting it would invalidate its existing signatures.",
+                "SkyPDF cannot add another digital signature to this already-signed PDF format yet. This is a document-format limitation, not a certificate error. Use the unsigned original, or an editor that can append a signature to this file; rewriting it would invalidate its existing signatures.",
             ),
             None => Some("The document is still loading."),
             _ => None,
@@ -2855,14 +2855,14 @@ impl Viewer {
                 Ok(_) => {
                     self.digital.trust_generation += 1;
                     self.digital.message =
-                        "MyPDF now trusts this certificate when it checks signatures.".into();
+                        "SkyPDF now trusts this certificate when it checks signatures.".into();
                 }
                 Err(e) => self.digital.error = Some(format!("{e:#}")),
             },
             Action::TrustRemove(sha256) => match self.digital.trust.remove(&sha256) {
                 Ok(_) => {
                     self.digital.trust_generation += 1;
-                    self.digital.message = "MyPDF no longer trusts this certificate.".into();
+                    self.digital.message = "SkyPDF no longer trusts this certificate.".into();
                 }
                 Err(e) => self.digital.error = Some(format!("{e:#}")),
             },
@@ -3428,7 +3428,7 @@ fn certificate_info(ui: &mut egui::Ui, info: &IdentityInfo) {
     }
 }
 
-/// Trust buttons for a certificate: in MyPDF, and in the operating system.
+/// Trust buttons for a certificate: in SkyPDF, and in the operating system.
 fn trust_controls(
     ui: &mut egui::Ui,
     system: &mut HashMap<Vec<u8>, bool>,
@@ -3439,7 +3439,7 @@ fn trust_controls(
     ui.horizontal_wrapped(|ui| {
         if trust.contains(der) {
             if ui
-                .add(ActionButton::new(Icon::Close, "Remove from MyPDF trust"))
+                .add(ActionButton::new(Icon::Close, "Remove from SkyPDF trust"))
                 .clicked()
             {
                 *action = Some(Action::TrustRemove(
@@ -3447,8 +3447,8 @@ fn trust_controls(
                 ));
             }
         } else if ui
-            .add(ActionButton::new(Icon::Shield, "Trust in MyPDF"))
-            .on_hover_text("Show signatures from this certificate as trusted in MyPDF")
+            .add(ActionButton::new(Icon::Shield, "Trust in SkyPDF"))
+            .on_hover_text("Show signatures from this certificate as trusted in SkyPDF")
             .clicked()
         {
             *action = Some(Action::TrustAdd(der.to_vec()));

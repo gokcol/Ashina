@@ -146,7 +146,7 @@ impl Viewer {
                             }
                         }
                         ui.separator();
-                        ui.weak("Comment exchange uses MyPDF review files.");
+                        ui.weak("Comment exchange uses SkyPDF review files.");
                     });
                     if self.review.job.is_some() {
                         ui.spinner();
@@ -277,8 +277,8 @@ impl Viewer {
         let path = menu::with_file_dialog(self._native_menu.as_ref(), || {
             if action == "import" {
                 rfd::FileDialog::new()
-                    .set_title("Import MyPDF review comments")
-                    .add_filter("MyPDF review", &["mypdf-review"])
+                    .set_title("Import SkyPDF review comments")
+                    .add_filter("SkyPDF review", &["mypdf-review"])
                     .pick_file()
             } else {
                 let (name, extension) = match action {

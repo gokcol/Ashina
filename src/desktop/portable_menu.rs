@@ -190,7 +190,7 @@ const MENUS: &[(&str, &[Entry])] = &[
             C("tool_search", "Find a Tool…"),
             C("whats_new", "What's New"),
             C("check_updates", "Check for Updates…"),
-            C("about", "About MyPDF"),
+            C("about", "About SkyPDF"),
         ],
     ),
 ];

@@ -231,7 +231,7 @@ impl State {
                 .show(ctx, |ui| {
                     egui::Frame::popup(ui.style()).show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.label("MyPDF update available");
+                            ui.label("SkyPDF update available");
                             if ui.button("View").clicked() {
                                 self.show(false);
                             }
@@ -255,7 +255,7 @@ impl State {
         let mut changed = false;
         let width = ui::dialog_width(ctx, 620.);
         let mut install = false;
-        egui::Window::new("MyPDF updates")
+        egui::Window::new("SkyPDF updates")
             .open(&mut open).collapsible(false).resizable(false)
             .default_width(width).default_pos(ctx.content_rect().center() - vec2(width / 2., 240.))
             .show(ctx, |ui| {
@@ -266,15 +266,15 @@ impl State {
                     ui::logo(ui.painter(), mark);
                     ui.add_space(12.);
                     ui.vertical(|ui| {
-                        let title = if self.notes { "What's New in MyPDF" }
+                        let title = if self.notes { "What's New in SkyPDF" }
                             else if self.pending.is_some() { "Checking for updates…" }
                             else if self.error.is_some() { "Couldn't check for updates" }
-                            else if self.report.as_ref().is_some_and(|r| r.available.is_some()) { "A new version of MyPDF is available!" }
+                            else if self.report.as_ref().is_some_and(|r| r.available.is_some()) { "A new version of SkyPDF is available!" }
                             else if self.report.is_some() { "You're up to date" }
-                            else { "Keep MyPDF up to date" };
+                            else { "Keep SkyPDF up to date" };
                         ui.label(RichText::new(title).size(21.).strong());
                         ui.add_space(6.);
-                        ui.label(format!("You have MyPDF {}.", self.report.as_ref().map_or(env!("CARGO_PKG_VERSION"), |r| r.installed.as_str())));
+                        ui.label(format!("You have SkyPDF {}.", self.report.as_ref().map_or(env!("CARGO_PKG_VERSION"), |r| r.installed.as_str())));
                         if let Some(report) = &self.report && !self.notes {
                             ui.weak(format!("Updates from {}", report.channel.label()));
                         }

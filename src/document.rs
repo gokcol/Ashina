@@ -498,12 +498,7 @@ pub fn fixture(font_path: &Path) -> Result<Vec<u8>> {
         op("f", vec![]),
         op("Q", vec![]),
     ];
-    operations.extend(line(
-        "F1",
-        24,
-        716,
-        Object::string_literal("MyPDF / Rust milestone 0"),
-    ));
+    operations.extend(line("F1", 24, 716, Object::string_literal("SkyPDF")));
     operations.extend(line(
         "F1",
         12,

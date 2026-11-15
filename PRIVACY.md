@@ -1,30 +1,32 @@
-# Privacy Policy for MyPDF (OG)
+# Privacy Policy for SkyPDF (formerly MyPDF)
 
-Effective date: 14 November 2026
+The app was previously named MyPDF. Its local storage and application identity remain the same after the rename.
 
-This policy covers MyPDF (OG), the Microsoft Store edition of MyPDF by
-Orhan Gökçöl, and the MyPDF desktop application distributed through the project's
-GitHub releases. It describes the behavior in version 3.1.1.
+Effective date: 15 November 2026
+
+This policy covers SkyPDF (formerly MyPDF), the Microsoft Store edition of SkyPDF by
+Orhan Gökçöl, and the SkyPDF desktop application distributed through the project's
+GitHub releases. It describes the behavior in version 3.1.2.
 
 ## Information processed on your device
 
-MyPDF is a desktop PDF editor. It accesses the documents, images, SVG artwork,
+SkyPDF is a desktop PDF editor. It accesses the documents, images, SVG artwork,
 form data and certificate files you choose to open or import. These files may
 contain personal information. The app processes their contents on your device
 to display, search, edit, annotate, convert, organize, print and sign documents.
 Text recognition also runs on the device: Apple Vision on Mac, and bundled
 Tesseract with local language models on Windows. OCR results can be reviewed and
-explicitly copied to the clipboard; they are not uploaded. MyPDF does not upload these
-files or their contents to the developer or to a MyPDF server.
+explicitly copied to the clipboard; they are not uploaded. SkyPDF does not upload these
+files or their contents to the developer or to a SkyPDF server.
 
-No MyPDF account is required. The app has no advertising, usage analytics,
+No SkyPDF account is required. The app has no advertising, usage analytics,
 tracking SDKs or automatic crash-report uploads. The developer does not receive
 your document contents, usage history or signing keys through the app, and does
 not sell or share that information for advertising.
 
 ## Local storage and recovery
 
-To provide its features, MyPDF stores settings, recent-file and favorite
+To provide its features, SkyPDF stores settings, recent-file and favorite
 shortcuts, file paths, reading positions, custom stamps and signature artwork,
 saved signature appearances, public certificate information, trust preferences
 and references to signing identities. It also saves recovery copies of applied
@@ -38,31 +40,31 @@ The default application-data locations are:
 - macOS: `~/Library/Application Support/MyPDF`
 
 A configured `MYPDF_DATA_DIR` can change this location. Files you save or export
-remain in the locations you choose. MyPDF does not provide cloud storage or
+remain in the locations you choose. SkyPDF does not provide cloud storage or
 automatic cloud synchronization. If you use a cloud-synced folder, shared drive,
 backup service or network printer, that service may handle the files according
 to your settings and its own policies.
 
-Settings, artwork and recovery files are not separately encrypted by MyPDF.
+Settings, artwork and recovery files are not separately encrypted by SkyPDF.
 Their protection depends on operating-system access controls and any device
 encryption you enable. Recovery copies can contain sensitive document content.
 
 ## Voice comments
 
-MyPDF accesses the default microphone only when you press Record for a voice comment and the operating system grants access. Recording and playback run locally. You can pause, stop and keep, or discard a recording. Each voice note is limited to three minutes.
+SkyPDF accesses the default microphone only when you press Record for a voice comment and the operating system grants access. Recording and playback run locally. You can pause, stop and keep, or discard a recording. Each voice note is limited to three minutes.
 
-Kept recordings become part of the document's local edits and may be included in recovery copies. Saving the PDF embeds the recording as a WAV file attachment; anyone who receives that PDF may be able to extract and listen to it. Save audio writes a separate local WAV file only at your request. MyPDF does not upload recordings or transcribe them. Prepare for sharing can remove recordings from a separate output copy.
+Kept recordings become part of the document's local edits and may be included in recovery copies. Saving the PDF embeds the recording as a WAV file attachment; anyone who receives that PDF may be able to extract and listen to it. Save audio writes a separate local WAV file only at your request. SkyPDF does not upload recordings or transcribe them. Prepare for sharing can remove recordings from a separate output copy.
 
 ## On-device translation
 
-Translation runs on the device with no cloud fallback. On supported Macs, MyPDF
+Translation runs on the device with no cloud fallback. On supported Macs, SkyPDF
 uses Apple's installed translation models. Apple's translation service may
-collect language and usage metrics, but not original or translated text. MyPDF
+collect language and usage metrics, but not original or translated text. SkyPDF
 requires a separate, explicit language-download action before a missing pair
 can be used; document text is not included in that download request.
 
-On Windows, MyPDF uses a local CTranslate2 runtime. When you choose to download
-a language pack, MyPDF contacts the pack's public distribution host (currently
+On Windows, SkyPDF uses a local CTranslate2 runtime. When you choose to download
+a language pack, SkyPDF contacts the pack's public distribution host (currently
 Argos Open Tech's argos-net.com service). That host may receive ordinary
 connection information such as your IP address and the requested model file,
 but no document text. Downloads are verified before use. Inference uses local
@@ -75,7 +77,7 @@ Attach translation as note, the result becomes a document annotation and is
 included in normal PDF saves and recovery copies. Closing the translation panel
 or changing the document/page clears the displayed text. Copying a result to
 the system clipboard is an explicit action. Downloaded Windows model packs can
-be removed from the app's translation-models directory while MyPDF is closed;
+be removed from the app's translation-models directory while SkyPDF is closed;
 Apple's downloaded models are managed by the operating system.
 
 ## Certificates and digital signatures
@@ -85,17 +87,17 @@ as an email address. Signing uses the certificate and signing identity you
 select. Private keys are managed by the operating-system certificate store,
 a configured hardware provider, or a password-protected PKCS#12 file, depending
 on the identity you use. Identity-file passphrases and private keys are not saved
-in MyPDF's settings or identity catalogue.
+in SkyPDF's settings or identity catalogue.
 
 Signed PDFs contain public certificate information and may contain the signer
 name, signing time, reason, location and signature artwork. Anyone receiving
 the signed PDF may be able to read that information. Signature verification
-uses local information; MyPDF does not contact an online timestamp or
+uses local information; SkyPDF does not contact an online timestamp or
 certificate-revocation service.
 
 ## External services and information you choose to share
 
-MyPDF can open a document's web or email link in your browser or mail application
+SkyPDF can open a document's web or email link in your browser or mail application
 after confirmation. That destination's policies then apply. Copying content uses
 the system clipboard, which may be accessible to other software or synchronized
 by your operating-system settings.
@@ -105,7 +107,7 @@ to an AI provider. If you copy a prompt into an external AI service yourself,
 that service handles the information under its own policies.
 
 Microsoft Store, GitHub, operating-system services and third-party certificate
-providers may process information independently under their own policies. MyPDF
+providers may process information independently under their own policies. SkyPDF
 does not control their distribution, account, diagnostic or support systems.
 
 ## Retention and your controls
@@ -129,7 +131,7 @@ must be managed through that system or provider.
 ## Contact and policy changes
 
 For privacy questions, contact the maintainer through
-[the MyPDF issue tracker](https://github.com/gokcol/MyPDF/issues).
+[the SkyPDF issue tracker](https://github.com/gokcol/MyPDF/issues).
 GitHub issues are public; do not include confidential documents, passwords or
 private keys. Information you voluntarily provide there is used to address
 your request and is also subject to GitHub's policies and retention controls.

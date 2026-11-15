@@ -121,7 +121,7 @@ impl Preview {
             ctx.clone(),
         );
         match std::thread::Builder::new()
-            .name("MyPDF print preview".into())
+            .name("SkyPDF print preview".into())
             .spawn(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     viewer::render_page(&bytes, page, 1400. / size.width.max(size.height))

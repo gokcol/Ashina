@@ -1,6 +1,6 @@
 # Microsoft Store packaging
 
-MyPDF stays a native Rust desktop app. This package adds a Windows application
+SkyPDF stays a native Rust desktop app. This package adds a Windows application
 identity, Start menu artwork, PDF **Open with** registration, and Store-managed
 installation/updates. It targets Windows 10 version 2004 (build 19041) or later,
 and Windows 11, on x64. It does not change the default PDF application.
@@ -21,14 +21,14 @@ exactly into GitHub repository **Settings → Secrets and variables → Actions 
 | `MSIX_IDENTITY_NAME` | Package/Identity/Name |
 | `MSIX_PUBLISHER` | Package/Identity/Publisher (the complete `CN=…` value) |
 | `MSIX_PUBLISHER_DISPLAY_NAME` | Package/Properties/PublisherDisplayName |
-| `MSIX_DISPLAY_NAME` | Exact reserved app name, currently `MyPDF (OG)` |
+| `MSIX_DISPLAY_NAME` | Exact reserved app name, currently `SkyPDF (formerly MyPDF)` |
 
 These are public identity values, not credentials. Do not generate a replacement
 publisher or use the test identity for a Store submission. The workflow passes
 `MSIX_DISPLAY_NAME` to the script's `-DisplayName` argument; without that optional
-variable, the default is `MyPDF`. This repository's Store product is reserved as
-**MyPDF (OG)**, so its Store workflow uses that exact display name. The Mac app
-and direct Windows installer retain the name MyPDF.
+variable, the default is `SkyPDF (formerly MyPDF)`. This repository's Store product is reserved as
+**SkyPDF (formerly MyPDF)**, so its Store workflow uses that exact display name. The Mac app
+and direct Windows installer use the name SkyPDF.
 
 ## Build
 
@@ -37,7 +37,7 @@ On GitHub, run **Actions → Microsoft Store MSIX → Run workflow**:
 - `ref`: the release tag or full commit SHA to package.
 - `mode`: `store` after configuring the three variables; `test` otherwise.
 - `package_version`: usually blank, which uses `version.txt` in this directory.
-  For MyPDF **2.3.0**, the internal MSIX version is **2.3.0.0**, which
+  For SkyPDF **2.3.0**, the internal MSIX version is **2.3.0.0**, which
   sorts above the previous submitted package **2.2.1.0** and preserves ordinary
   upgrades. Public app versions and MSIX package versions are maintained
   separately. Increase `version.txt` for each Store release.
@@ -118,3 +118,5 @@ configured and certification succeeds, this is packaging support, not a Store re
 - [Package version rules](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/app-package-requirements)
 - [Accepted submission formats](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/upload-app-packages)
 - [Store signing and developer account requirements](https://learn.microsoft.com/en-us/windows/apps/publish/faq/get-started-with-the-microsoft-store)
+
+The Store product ID, package identity/publisher, application ID `MyPDF`, executable `MyPDF.exe` and `mypdf-og.exe` launch alias are retained from MyPDF. They preserve upgrades, app data and pinned shortcuts. Only the public display name and new package filenames change.

@@ -71,7 +71,7 @@ impl State {
         let (tx, rx) = mpsc::channel();
         let wake = ctx.clone();
         std::thread::Builder::new()
-            .name("MyPDF printing".into())
+            .name("SkyPDF printing".into())
             .spawn(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     job.spool(&bytes, &pages, &name, None)
@@ -222,7 +222,7 @@ impl Viewer {
             // A private temporary copy, removed once printing is done.
             let file = bytes.and_then(|bytes| {
                 let mut file = tempfile::Builder::new()
-                    .prefix("MyPDF-print-")
+                    .prefix("SkyPDF-print-")
                     .suffix(".pdf")
                     .tempfile()?;
                 std::io::Write::write_all(&mut file, &bytes)?;

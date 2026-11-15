@@ -238,7 +238,7 @@ private struct DownloadView: View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Download languages for offline translation", systemImage: "arrow.down.circle")
                 .font(.headline)
-            Text("Apple may ask you to confirm a language download. No PDF text is included in this request. After downloading, return to MyPDF and choose Translate.")
+            Text("Apple may ask you to confirm a language download. No PDF text is included in this request. After downloading, return to SkyPDF and choose Translate.")
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
                 ProgressView().controlSize(.small)

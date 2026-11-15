@@ -24,7 +24,10 @@ import tempfile
 import uuid
 
 REGISTER = Path('/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister')
-INSTALLED = Path('/Applications/MyPDF.app')
+# The bundle identity and executable remain stable across the public rename.
+INSTALLED = Path('/Applications/SkyPDF.app')
+if not INSTALLED.exists():
+    INSTALLED = Path('/Applications/MyPDF.app')
 REPOSITORY = Path(__file__).resolve().parents[1]
 
 

@@ -1620,7 +1620,7 @@ impl DigitalState {
                     if self.signing_entries().next().is_none() {
                         ui.add_space(4.);
                         ui.label(
-                            RichText::new("No digital ID yet? MyPDF can create one for you in the next step.")
+                            RichText::new("No digital ID yet? SkyPDF can create one for you in the next step.")
                                 .size(12.)
                                 .color(theme::muted()),
                         );
@@ -2043,9 +2043,9 @@ impl DigitalState {
                     ui.add_space(12.);
                     ui.label(
                         RichText::new(if cfg!(target_os = "windows") {
-                            "MyPDF creates a personal digital ID and keeps it in Windows. There is no password to remember."
+                            "SkyPDF creates a personal digital ID and keeps it in Windows. There is no password to remember."
                         } else {
-                            "MyPDF creates a personal digital ID and keeps it in your Keychain. There is no password to remember."
+                            "SkyPDF creates a personal digital ID and keeps it in your Keychain. There is no password to remember."
                         })
                         .size(13.)
                         .color(theme::muted()),

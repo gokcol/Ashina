@@ -27,7 +27,7 @@ pub(super) struct Draft {
     from: usize,
     to: usize,
     preview: usize,
-    /// Pages that already carry a MyPDF watermark.
+    /// Pages that already carry a SkyPDF watermark.
     existing: usize,
     error: Option<String>,
 }
@@ -238,7 +238,7 @@ impl Viewer {
                         remove = ui
                             .add(ActionButton::new(Icon::Trash, "Remove watermarks").tint(theme::danger()))
                             .on_hover_text(format!(
-                                "Remove the watermarks MyPDF added on {} page{}",
+                                "Remove the watermarks SkyPDF added on {} page{}",
                                 draft.existing,
                                 if draft.existing == 1 { "" } else { "s" }
                             ))

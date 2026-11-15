@@ -1,14 +1,7 @@
-MyPDF 3.1.1
+SkyPDF 3.1.2
 
-• Voice notes in Comment: record, pause, play and export local audio; WAV recordings stay inside the PDF.
-• Note threads in the right panel: names, initials, dates, replies and Resolve/Reopen. PDF replies use standard thread links for other readers.
-• Revision clouds, replacement suggestions and insertion notes keep the original document text unchanged.
-• PDF review summaries with numbered page previews; CSV export and MyPDF comment exchange with duplicate checks and safe conflict handling.
-• Export → Prepare for sharing: remove comments, metadata and attachments, or flatten visible pages to exclude hidden content.
-• Compact Select/Lasso menu and artwork collection manager; reorder or hide items, with 45 optional hidden arrows, symbols and stamps.
-• Strict Edit/Annotate separation; smoother dragging, immediate drawing selection and clearer active tools. Only the selected Draw icon shows ink color.
-• In-place rotated text editing, width-only resizing with automatic height, grab cursors and ±15° rotation controls.
-• Maintenance: reuse parsed PDFs and page previews, reduce review-list copying, bound export memory and retain recordings after a failed attachment.
-• Complete feature guide included. The 3.1 line now enters a feature freeze focused on reliability and performance.
-
-Also includes touch detection, finger drawing and floating touch tools; customizable Home, five visual styles, polished Settings and offline OCR.
+• MyPDF is now SkyPDF. The Microsoft Store listing uses SkyPDF (formerly MyPDF) so existing users can recognize the app.
+• The new name appears in the app, menus, About, installers and release downloads. Existing settings, artwork, signatures, review files and editable PDF objects remain compatible.
+• Windows downloads include native x64 and ARM64 builds, with offline English, Turkish and German OCR and a native translation runtime.
+• Fixed a Windows offline-translation shutdown hang; repeated translation jobs now release their worker threads cleanly.
+• Continues the 3.1 feature freeze, focused on reliability and performance.

@@ -260,7 +260,7 @@ impl Viewer {
                 .on_disabled_hover_text(if summary.is_none() {
                     "Checking this document…"
                 } else {
-                    "No page or Bates numbers added by MyPDF"
+                    "No page or Bates numbers added by SkyPDF"
                 })
                 .clicked()
             {
@@ -272,7 +272,7 @@ impl Viewer {
                     summary.is_some_and(|s| s.any()),
                     ActionButton::new(Icon::Trash, "Remove All Text"),
                 )
-                .on_hover_text("Remove every header and footer that MyPDF added")
+                .on_hover_text("Remove every header and footer that SkyPDF added")
                 .clicked()
             {
                 chosen = Some(Err(true));
@@ -316,7 +316,7 @@ impl Viewer {
                 ctx,
                 "remove_page_numbers",
                 "Remove page numbers?",
-                "Page and Bates numbers that MyPDF added are removed from every page. Undo restores them.",
+                "Page and Bates numbers that SkyPDF added are removed from every page. Undo restores them.",
                 &[
                     ("Cancel", ui::DialogTone::Secondary),
                     ("Remove", ui::DialogTone::Destructive),

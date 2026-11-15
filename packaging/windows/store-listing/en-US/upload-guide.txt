@@ -1,4 +1,4 @@
-MyPDF (OG) 2.3.0 — Microsoft Store, English (United States)
+SkyPDF (formerly MyPDF) 3.1.2 — Microsoft Store, English (United States)
 
 Description: paste description.txt as plain text.
 Release notes: paste release-notes.txt as plain text.
@@ -7,7 +7,7 @@ Screenshot captions: use the corresponding entries from captions.txt.
 Optional Store logos: upload each PNG to its matching 300 x 300, 150 x 150, or 71 x 71 field.
 Optional keywords: enter each line of keywords.txt as a separate keyword phrase.
 Privacy policy: https://github.com/gokcol/MyPDF/blob/main/PRIVACY.md
-Support website: https://github.com/gokcol/MyPDF/issues
+Support email: orhan.gokcol@hotmail.com
 Product website: https://github.com/gokcol/MyPDF
 
 All screenshot documents are fictional. The screenshots come from the native Windows application renderer, without desktop chrome or added marketing artwork. provenance.json records the build source and capture method.

@@ -15,12 +15,12 @@ fn main() {
         let mut resource = winresource::WindowsResource::new();
         resource
             .set_icon("packaging/windows/MyPDF.ico")
-            .set("ProductName", "MyPDF")
-            .set("FileDescription", "MyPDF")
-            .set("CompanyName", "MyPDF contributors")
+            .set("ProductName", "SkyPDF")
+            .set("FileDescription", "SkyPDF")
+            .set("CompanyName", "SkyPDF contributors")
             .set(
                 "LegalCopyright",
-                "© 2026 MyPDF contributors · MIT OR Apache-2.0",
+                "© 2026 SkyPDF contributors · MIT OR Apache-2.0",
             );
         resource
             .compile()

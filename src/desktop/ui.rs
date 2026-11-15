@@ -1,4 +1,4 @@
-//! MyPDF design system: native fonts, gradient fills, vector icons and controls.
+//! SkyPDF design system: native fonts, gradient fills, vector icons and controls.
 //! Controls use vector artwork; the app mark uses the shared calico icon.
 //! Every control carries an accessible text label.
 use super::*;
@@ -174,7 +174,7 @@ pub(super) fn caption(ui: &mut egui::Ui, text: &str) -> egui::Response {
 pub(super) enum Fill {
     /// White to soft gray, top to bottom: multiplied by a tint for glossy buttons.
     Sheen,
-    /// The MyPDF blue-to-violet brand gradient.
+    /// The SkyPDF blue-to-violet brand gradient.
     Brand,
     /// Coral to crimson for destructive emphasis.
     Danger,
@@ -262,7 +262,7 @@ pub(super) fn logo(painter: &egui::Painter, rect: Rect) {
     let texture = ctx.data(|data| data.get_temp::<egui::TextureHandle>(id));
     let texture = texture.unwrap_or_else(|| {
         let image = egui::ColorImage::from_rgba_unmultiplied([256, 256], &super::icon::rgba(256));
-        let texture = ctx.load_texture("MyPDF calico", image, egui::TextureOptions::LINEAR);
+        let texture = ctx.load_texture("SkyPDF calico", image, egui::TextureOptions::LINEAR);
         ctx.data_mut(|data| data.insert_temp(id, texture.clone()));
         texture
     });

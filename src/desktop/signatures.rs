@@ -679,7 +679,7 @@ impl Viewer {
                                         if !e.trusted
                                             && ui
                                                 .add(ActionButton::new(Icon::Shield, "Add to trusted certificates"))
-                                                .on_hover_text("Trust this signer's certificate in MyPDF from now on; manage the list in Digital IDs → Trusted")
+                                                .on_hover_text("Trust this signer's certificate in SkyPDF from now on; manage the list in Digital IDs → Trusted")
                                                 .clicked()
                                         {
                                             trust = Some(der.clone());

@@ -603,7 +603,7 @@ mod tests {
             .spool(
                 &preview.bytes,
                 &preview.pages,
-                "MyPDF print regression",
+                "SkyPDF print regression",
                 Some(&output),
             )
             .unwrap();

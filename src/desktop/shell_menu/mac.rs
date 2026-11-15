@@ -46,7 +46,7 @@ pub(super) fn install() {
         )
         .as_bool()
         {
-            eprintln!("Could not install the MyPDF Dock menu");
+            eprintln!("Could not install the SkyPDF Dock menu");
         }
     }
 }

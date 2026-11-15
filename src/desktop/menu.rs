@@ -119,8 +119,8 @@ impl NativeMenu {
     pub fn history_labels(&self, _: Option<String>, _: Option<String>, _: bool) {}
 }
 
-/// What MyPDF is, in the About window and the README.
-pub(super) const ABOUT: &str = "MyPDF was built with the help of Claude, Anthropic's AI assistant, to make everyday business paperwork easier. It is provided as is, without warranty of any kind: keep copies of important documents and use it at your own risk.";
+/// What SkyPDF is, in the About window and the README.
+pub(super) const ABOUT: &str = "SkyPDF was built with the help of Claude, Anthropic's AI assistant, to make everyday business paperwork easier. It is provided as is, without warranty of any kind: keep copies of important documents and use it at your own risk.";
 
 #[cfg(all(target_os = "macos", not(test)))]
 pub fn install(ctx: egui::Context) -> (Option<NativeMenu>, mpsc::Receiver<String>) {
@@ -139,10 +139,10 @@ pub fn install(ctx: egui::Context) -> (Option<NativeMenu>, mpsc::Receiver<String
         )
     };
     let app = Submenu::with_items(
-        "MyPDF",
+        "SkyPDF",
         true,
         &[
-            &MenuItem::with_id("about", "About MyPDF", true, None),
+            &MenuItem::with_id("about", "About SkyPDF", true, None),
             &MenuItem::with_id("whats_new", "What's New", true, None),
             &MenuItem::with_id("check_updates", "Check for Updates…", true, None),
             &P::separator(),
@@ -152,7 +152,7 @@ pub fn install(ctx: egui::Context) -> (Option<NativeMenu>, mpsc::Receiver<String
             &P::hide_others(None),
             &P::show_all(None),
             &P::separator(),
-            &item("quit", "Quit MyPDF", Code::KeyQ, Modifiers::empty()),
+            &item("quit", "Quit SkyPDF", Code::KeyQ, Modifiers::empty()),
         ],
     );
     let recent = Submenu::with_id("open_recent", "Open Recent", true);
@@ -436,7 +436,7 @@ fn decorate_native_menu(menu: &muda::Menu) {
     use muda::ContextMenu;
     let (icons, rows) = decorate_native_rows(menu.ns_menu().cast(), &menu.items(), false);
     if std::env::var_os("MYPDF_MENU_ICON_REPORT").is_some() {
-        eprintln!("MyPDF native menu icons: {icons}/{rows} rows");
+        eprintln!("SkyPDF native menu icons: {icons}/{rows} rows");
     }
 }
 
@@ -588,9 +588,9 @@ fn native_symbol(id: &str, label: &str) -> &'static str {
             "Select All" => "checkmark.square",
             "Minimize" => "minus",
             "Zoom" => "arrow.up.left.and.arrow.down.right",
-            "Hide MyPDF" | "Hide Others" => "eye.slash",
+            "Hide SkyPDF" | "Hide Others" => "eye.slash",
             "Show All" => "eye",
-            "About MyPDF" => "info.circle",
+            "About SkyPDF" => "info.circle",
             _ => "doc",
         },
     }

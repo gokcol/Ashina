@@ -1,8 +1,10 @@
-# MyPDF feature guide
+# SkyPDF feature guide
 
-**Release: 3.1.1** · macOS (Apple Silicon) and Windows (x64 and ARM64)
+Previously named **MyPDF**. The Store listing uses **SkyPDF (formerly MyPDF)**; existing documents, settings and review exchange files remain compatible.
 
-MyPDF is a native desktop PDF editor for local documents. Its main workspaces are **Read, Annotate, Edit, Draw, Forms, Sign, Pages and Export**. Contextual controls appear in the right panel; tool variations share compact menus that open on hover, click or tap.
+**Release: 3.1.2** · macOS (Apple Silicon) and Windows (x64 and ARM64)
+
+SkyPDF is a native desktop PDF editor for local documents. Its main workspaces are **Read, Annotate, Edit, Draw, Forms, Sign, Pages and Export**. Contextual controls appear in the right panel; tool variations share compact menus that open on hover, click or tap.
 
 ## Open, read and navigate
 
@@ -40,12 +42,12 @@ MyPDF is a native desktop PDF editor for local documents. Its main workspaces ar
 - Suggest replacement wording or an insertion under Annotate → More; replacement is also available on selected text. Suggestions never rewrite the original page text.
 - Voice comments under the same **Comment** menu: record locally, pause/resume, keep or discard, play back, and save audio separately.
 - Voice recordings use the default microphone only after Record and system permission; each recording is limited to three minutes.
-- Saved PDFs contain voice audio as standard WAV attachments. MyPDF provides inline playback; playback in other readers varies.
+- Saved PDFs contain voice audio as standard WAV attachments. SkyPDF provides inline playback; playback in other readers varies.
 - Callouts with visible text boxes and leaders pointing to page details.
 - Review replies, author information, open/resolved status and author/status/color filtering.
 - Export CSV summaries or searchable PDF summaries with numbered comments beside page previews, including long replies on continuation pages.
-- Saved PDFs include standard reply annotations with author names, dates and thread links for other PDF readers. MyPDF reloads supported reply changes on its own unchanged parent comments; unsupported or externally altered parent annotations are preserved as foreign PDF objects.
-- Export/import MyPDF review files (`.mypdf-review`) from Review actions. Includes native comments, drawings, stamps, voice recordings and replies; validates the base document, skips duplicates, and keeps conflicts as separate comments after a preview. Import is undoable. This is a MyPDF exchange format, not Acrobat XFDF/FDF.
+- Saved PDFs include standard reply annotations with author names, dates and thread links for other PDF readers. SkyPDF reloads supported reply changes on its own unchanged parent comments; unsupported or externally altered parent annotations are preserved as foreign PDF objects.
+- Export/import SkyPDF review files (`.mypdf-review`) from Review actions. Includes native comments, drawings, stamps, voice recordings and replies; validates the base document, skips duplicates, and keeps conflicts as separate comments after a preview. Import is undoable. This is a SkyPDF exchange format, not Acrobat XFDF/FDF.
 - Move annotations by dragging inside them; resize and rotate using selection controls.
 - Undo/Redo for supported annotation changes, including replacement recordings.
 
@@ -75,7 +77,7 @@ MyPDF is a native desktop PDF editor for local documents. Its main workspaces ar
 - Create custom stamp variants without changing the built-in originals.
 - Edit stamp text, colors and appearance; manage custom artwork, duplicate it, or remove it with session undo.
 - SVG Studio with a visual editor and source editing, text/shape controls, border templates, fill/background styling and transparency.
-- Import supported artwork or paste SVG; use the prompt builder to create an external prompt and import the resulting SVG. MyPDF does not send that prompt to an AI service.
+- Import supported artwork or paste SVG; use the prompt builder to create an external prompt and import the resulting SVG. SkyPDF does not send that prompt to an AI service.
 - Remember the last explicitly chosen placement size for stamps and saved ink signatures.
 
 ## Touch interaction
@@ -96,7 +98,7 @@ MyPDF is a native desktop PDF editor for local documents. Its main workspaces ar
 - Merge PDFs or split a document into separate outputs.
 - Insert supported files by drag-and-drop or Insert, including into an empty document.
 - Supported import families: PDF; PNG/JPEG, TIFF, HEIC/HEIF, WebP, GIF and other supported raster images; SVG; TXT, Markdown, DOCX and RTF.
-- DOCX/RTF layout conversion requires a supported installed converter such as Microsoft Word or LibreOffice; MyPDF explains the requirement if none is available.
+- DOCX/RTF layout conversion requires a supported installed converter such as Microsoft Word or LibreOffice; SkyPDF explains the requirement if none is available.
 - Page numbers, headers, footers, Bates-style numbering and text/image watermarks, with page-range and appearance controls.
 - Multiple-pages-per-sheet output with margins, headers/footers and watermarks.
 
@@ -174,4 +176,4 @@ Visible sensitive information must be redacted first. Full cleanup removes searc
 
 ## Feature freeze
 
-Version 3.1.1 closes the agreed feature set. Subsequent work prioritizes reliability, performance, compatibility, accessibility/usability corrections and regression prevention. New feature work requires a separate decision.
+Version 3.1.2 closes the agreed feature set. Subsequent work prioritizes reliability, performance, compatibility, accessibility/usability corrections and regression prevention. New feature work requires a separate decision.

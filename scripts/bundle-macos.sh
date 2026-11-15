@@ -10,7 +10,7 @@ if [ "$(uname -s)" != Darwin ]; then
 fi
 profile=release
 target=${CARGO_BUILD_TARGET:-}
-output=dist/MyPDF.app
+output=dist/SkyPDF.app
 document_handlers=true
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -74,7 +74,7 @@ trap cleanup 0
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
-app=$work/MyPDF.app
+app=$work/SkyPDF.app
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$binary_dir/mypdf" "$app/Contents/MacOS/MyPDF"
 cp packaging/Info.plist "$app/Contents/Info.plist"

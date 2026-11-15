@@ -242,7 +242,7 @@ impl Viewer {
         let mut open = true;
         egui::Window::new("Workspace").open(&mut open).resizable(false).show(ctx,|ui|{
             let mut enabled=self.workspace.saved.enabled;
-            if ui.checkbox(&mut enabled,"Reopen my documents when MyPDF starts").changed() {
+            if ui.checkbox(&mut enabled,"Reopen my documents when SkyPDF starts").changed() {
                 let mut saved=self.workspace.saved.clone();saved.enabled=enabled;
                 match preferences::save(&self.workspace.root,"workspace.json",&saved) {Ok(())=>self.workspace.saved=saved,Err(e)=>self.workspace.error=Some(e.to_string())}
             }

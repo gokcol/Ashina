@@ -2,6 +2,16 @@
   "unreleased": [],
   "releases": [
     {
+      "version": "3.1.2",
+      "changes": [
+        "MyPDF is now SkyPDF. The Microsoft Store listing uses SkyPDF (formerly MyPDF) so existing users can recognize the app.",
+        "The new name appears in the app, menus, About, installers and release downloads. Existing settings, artwork, signatures, review files and editable PDF objects remain compatible.",
+        "Windows downloads include native x64 and ARM64 builds, with offline English, Turkish and German OCR and a native translation runtime.",
+        "Fixed a Windows offline-translation shutdown hang; repeated translation jobs now release their worker threads cleanly.",
+        "Continues the 3.1 feature freeze, focused on reliability and performance."
+      ]
+    },
+    {
       "version": "3.1.1",
       "changes": [
         "Voice notes in Comment: record, pause, play and export local audio; WAV recordings stay inside the PDF.",

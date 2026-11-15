@@ -5,8 +5,8 @@ The **Windows build** GitHub Actions workflow accepts `architecture: x64`,
 `aarch64-pc-windows-msvc` host toolchain. Leave `release` empty for a validation
 build; artifacts remain attached to its workflow run.
 
-ARM64 packages are named `MyPDF-<version>-windows-arm64.zip` and
-`MyPDF-<version>-Setup-arm64.exe`, each with a SHA-256 checksum. The existing
+ARM64 packages are named `SkyPDF-<version>-windows-arm64.zip` and
+`SkyPDF-<version>-Setup-arm64.exe`, each with a SHA-256 checksum. The existing
 x64 filenames remain unchanged. The ARM installer accepts ARM64 Windows only.
 Standalone update checks retain the installed architecture and never offer an
 x64 installer to the ARM64 app.

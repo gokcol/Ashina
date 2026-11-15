@@ -25,7 +25,7 @@ fn main() -> eframe::Result {
         .with_titlebar_shown(false);
     let options = eframe::NativeOptions {
         viewport: viewport
-            .with_title("MyPDF")
+            .with_title("SkyPDF")
             .with_inner_size([1200.0, 820.0])
             .with_min_inner_size([720.0, 480.0])
             .with_icon(eframe::egui::IconData {
@@ -37,7 +37,7 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
     eframe::run_native(
-        "MyPDF",
+        "SkyPDF",
         options,
         Box::new(move |cc| Ok(Box::new(desktop::Viewer::new(cc, paths)))),
     )

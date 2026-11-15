@@ -17,8 +17,9 @@ def render(changelog, version):
     changes = notes["changes"]
     if not all(isinstance(c, str) and c.strip() for c in changes):
         raise ValueError("Release changes must be nonempty strings")
-    github = f"## MyPDF {version}\n\n" + "\n".join(f"- {c}" for c in changes) + "\n"
-    store = f"MyPDF {version}\n\n" + "\n".join(f"• {c}" for c in changes) + "\n"
+    brand = "SkyPDF" if tuple(map(int, version.split("."))) >= (3, 1, 2) else "MyPDF"
+    github = f"## {brand} {version}\n\n" + "\n".join(f"- {c}" for c in changes) + "\n"
+    store = f"{brand} {version}\n\n" + "\n".join(f"• {c}" for c in changes) + "\n"
     if len(store) > 1500:
         raise ValueError("Microsoft Store notes exceed 1,500 characters; shorten the shared release entry")
     return github, store

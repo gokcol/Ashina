@@ -78,10 +78,10 @@ pub(super) fn read(
                 .join("ocr"),
         );
     let runtime = runtime.canonicalize().context(
-        "The bundled OCR engine is missing. Reinstall the complete MyPDF Windows package.",
+        "The bundled OCR engine is missing. Reinstall the complete SkyPDF Windows package.",
     )?;
     let languages = std::fs::read_to_string(runtime.join("languages.txt"))
-        .context("The OCR language list is missing. Reinstall MyPDF.")?;
+        .context("The OCR language list is missing. Reinstall SkyPDF.")?;
     let languages = languages.trim();
     ensure!(
         !languages.is_empty()
@@ -96,7 +96,7 @@ pub(super) fn read(
                 .join("tessdata")
                 .join(format!("{language}.traineddata"))
                 .is_file(),
-            "The {language} OCR model is missing. Reinstall MyPDF."
+            "The {language} OCR model is missing. Reinstall SkyPDF."
         );
     }
     // Relative tessdata avoids narrow-character path handling inside Tesseract.
