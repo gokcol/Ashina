@@ -75,6 +75,9 @@ impl Default for State {
         if prefs.cached.as_ref().is_some_and(|r| {
             release::Version::parse(&r.installed)
                 != release::Version::parse(env!("CARGO_PKG_VERSION"))
+                || (cfg!(target_os = "windows")
+                    && matches!(r.channel, Channel::Windows | Channel::WindowsArm)
+                    && r.channel != Channel::windows())
                 || r.available
                     .as_ref()
                     .is_some_and(|a| !release::valid_destination(r.channel, &a.url))

@@ -54,6 +54,13 @@ pub enum Channel {
     Store,
 }
 impl Channel {
+    pub const fn windows() -> Self {
+        if cfg!(target_arch = "aarch64") {
+            Self::WindowsArm
+        } else {
+            Self::Windows
+        }
+    }
     pub fn label(self) -> &'static str {
         match self {
             Self::MacArm | Self::MacIntel => "GitHub · Mac",
@@ -262,11 +269,7 @@ pub fn prepare(window: Option<isize>) -> Result<PendingCheck> {
     if identity.0 == 15700 {
         // APPMODEL_ERROR_NO_PACKAGE: standalone EXE installation.
         return Ok(Box::pin(github(
-            if cfg!(target_arch = "aarch64") {
-                Channel::WindowsArm
-            } else {
-                Channel::Windows
-            },
+            Channel::windows(),
             env!("CARGO_PKG_VERSION"),
         )));
     }

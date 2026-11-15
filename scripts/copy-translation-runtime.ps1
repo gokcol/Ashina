@@ -25,6 +25,7 @@ if (-not (Test-Path $source -PathType Container)) {
 }
 $required = @('mypdf_ct2.dll', 'mypdf_ct2.dll.sha256', 'licenses/CTranslate2.txt',
     'licenses/SentencePiece.txt', 'licenses/Argos-Translate.txt', 'licenses/languages.json')
+if ($Architecture -eq 'arm64') { $required += 'licenses/LICENSE-cpuinfo-ARM64.txt' }
 foreach ($relative in $required) {
     $file = Join-Path $source $relative
     if (-not (Test-Path $file -PathType Leaf) -or (Get-Item $file).Length -eq 0) {

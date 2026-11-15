@@ -65,7 +65,7 @@ install(TARGETS mypdf_ct2
 install(FILES ${ctranslate2_SOURCE_DIR}/LICENSE DESTINATION licenses RENAME CTranslate2.txt COMPONENT MyPDFTranslation)
 install(FILES ${sentencepiece_SOURCE_DIR}/LICENSE DESTINATION licenses RENAME SentencePiece.txt COMPONENT MyPDFTranslation)
 if(WIN32 AND CMAKE_GENERATOR_PLATFORM STREQUAL "ARM64")
-  install(FILES ${cpuinfo_SOURCE_DIR}/LICENSE DESTINATION licenses RENAME cpuinfo-ARM64.txt COMPONENT MyPDFTranslation)
+  install(FILES ${cpuinfo_SOURCE_DIR}/LICENSE DESTINATION licenses RENAME LICENSE-cpuinfo-ARM64.txt COMPONENT MyPDFTranslation)
 endif()
 install(DIRECTORY ${ctranslate2_SOURCE_DIR}/third_party/ DESTINATION licenses/CTranslate2-dependencies
   COMPONENT MyPDFTranslation FILES_MATCHING PATTERN "LICENSE*" PATTERN "COPYING*" PATTERN "COPYRIGHT*" PATTERN "NOTICE*")
