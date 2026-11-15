@@ -11,6 +11,9 @@
 #ifndef Source
   #define Source "..\..\pack\MyPDF"
 #endif
+#ifndef AppArchitecture
+  #define AppArchitecture "x64compatible"
+#endif
 
 [Setup]
 AppId={{8C4E2F6A-5B1D-4C7E-9A2F-3D6B1E0F7A51}
@@ -30,8 +33,8 @@ DefaultDirName={autopf}\MyPDF
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
+ArchitecturesAllowed={#AppArchitecture}
+ArchitecturesInstallIn64BitMode={#AppArchitecture}
 MinVersion=10.0
 SetupIconFile=MyPDF.ico
 UninstallDisplayIcon={app}\MyPDF.exe
@@ -59,6 +62,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "{#Source}\MyPDF.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Source}\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#Source}\FEATURES.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Source}\LICENSE-MIT"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Source}\LICENSE-APACHE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Source}\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion

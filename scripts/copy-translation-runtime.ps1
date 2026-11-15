@@ -2,13 +2,15 @@
 # Shared by the ZIP/Inno and MSIX paths so releases cannot omit this feature.
 [CmdletBinding()]
 param(
-    [string]$SourceDirectory = 'dist/translation/windows-x64',
+    [ValidateSet('x64', 'arm64')][string]$Architecture = 'x64',
+    [string]$SourceDirectory = '',
     [Parameter(Mandatory = $true)][string]$DestinationDirectory
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($env:OS -ne 'Windows_NT') { throw 'Translation runtime packaging requires Windows.' }
 $repo = Split-Path $PSScriptRoot -Parent
+if (-not $SourceDirectory) { $SourceDirectory = "dist/translation/windows-$Architecture" }
 $source = if ([System.IO.Path]::IsPathRooted($SourceDirectory)) {
     [System.IO.Path]::GetFullPath($SourceDirectory)
 } else { [System.IO.Path]::GetFullPath((Join-Path $repo $SourceDirectory)) }
@@ -58,9 +60,9 @@ $expected = $Matches.digest
 if ((Get-FileHash (Join-Path $source 'mypdf_ct2.dll') -Algorithm SHA256).Hash -ine $expected) {
     throw 'Translation runtime checksum does not match the built DLL.'
 }
-# This checks the x64 PE header and loads the real exported ABI; merely finding
+# This checks the target PE header and loads the real exported ABI; merely finding
 # a file would not detect a missing native dependency or the wrong architecture.
-& (Join-Path $PSScriptRoot 'test-translation-runtime.ps1') -RuntimeDirectory $source
+& (Join-Path $PSScriptRoot 'test-translation-runtime.ps1') -RuntimeDirectory $source -Architecture $Architecture
 if (Test-Path $destination) { throw "Translation destination already exists: $destination" }
 $null = New-Item -ItemType Directory -Path $destinationRoot -Force
 try {

@@ -1,7 +1,11 @@
 [CmdletBinding()]
-param([string]$RuntimeDirectory = 'dist/translation/windows-x64')
+param(
+    [ValidateSet('x64', 'arm64')][string]$Architecture = 'x64',
+    [string]$RuntimeDirectory = ''
+)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+if (-not $RuntimeDirectory) { $RuntimeDirectory = "dist/translation/windows-$Architecture" }
 $dll = [System.IO.Path]::GetFullPath((Join-Path $RuntimeDirectory 'mypdf_ct2.dll'))
 if (-not (Test-Path $dll)) { throw 'Offline translation DLL is missing.' }
 $stream = [System.IO.File]::OpenRead($dll)
@@ -12,10 +16,14 @@ try {
     $peOffset = $reader.ReadUInt32()
     if ($peOffset -gt $stream.Length - 6) { throw 'Translation runtime PE header is invalid.' }
     $stream.Position = $peOffset
-    if ($reader.ReadUInt32() -ne 0x00004550 -or $reader.ReadUInt16() -ne 0x8664) {
-        throw 'Translation runtime must be a Windows x64 DLL.'
+    $machine = if ($Architecture -eq 'arm64') { 0xaa64 } else { 0x8664 }
+    if ($reader.ReadUInt32() -ne 0x00004550 -or $reader.ReadUInt16() -ne $machine) {
+        throw "Translation runtime must be a Windows $Architecture DLL."
     }
 } finally { $reader.Dispose(); $stream.Dispose() }
+if ([Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString() -ine $Architecture) {
+    throw "Run the translation ABI test in native $Architecture PowerShell."
+}
 $expected = ((Get-Content "$dll.sha256" -Raw).Trim() -split '\s+')[0]
 $actual = (Get-FileHash $dll -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($expected -notmatch '^[a-f0-9]{64}$' -or $actual -ne $expected) { throw 'Offline translation runtime checksum mismatch.' }

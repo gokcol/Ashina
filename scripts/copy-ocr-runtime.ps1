@@ -1,7 +1,12 @@
 [CmdletBinding()]
-param([string]$SourceDirectory = 'dist/ocr/windows-x64', [Parameter(Mandatory = $true)][string]$DestinationDirectory)
+param(
+    [ValidateSet('x64', 'arm64')][string]$Architecture = 'x64',
+    [string]$SourceDirectory = '',
+    [Parameter(Mandatory = $true)][string]$DestinationDirectory
+)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+if (-not $SourceDirectory) { $SourceDirectory = "dist/ocr/windows-$Architecture" }
 $source = [IO.Path]::GetFullPath($SourceDirectory)
 $destination = Join-Path ([IO.Path]::GetFullPath($DestinationDirectory)) 'ocr'
 if (Test-Path $destination) { throw 'OCR destination already exists.' }
@@ -16,6 +21,7 @@ foreach ($entry in $manifest.PSObject.Properties) {
     }
 }
 $models = Get-Content "$source/models.json" -Raw | ConvertFrom-Json
+& (Join-Path $PSScriptRoot 'test-windows-architecture.ps1') -Path "$source/tesseract.exe" -Architecture $Architecture
 foreach ($model in $models.models) {
     if ((Get-FileHash "$source/tessdata/$($model.language).traineddata" -Algorithm SHA256).Hash -ine $model.sha256) { throw 'OCR model validation failed.' }
 }

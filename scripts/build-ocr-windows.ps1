@@ -1,13 +1,17 @@
 # Build the offline OCR executable from a pinned official vcpkg revision.
 [CmdletBinding()]
-param([string]$OutputDirectory = 'dist/ocr/windows-x64')
+param(
+    [ValidateSet('x64', 'arm64')][string]$Architecture = 'x64',
+    [string]$OutputDirectory = ''
+)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $repo = Split-Path $PSScriptRoot -Parent
 Push-Location $repo
 try {
+    if (-not $OutputDirectory) { $OutputDirectory = "dist/ocr/windows-$Architecture" }
     $revision = 'dee92af2943e2216d7ba21ec4516a2c538c34c53'
-    $root = Join-Path $repo 'target/ocr-vcpkg'
+    $root = Join-Path $repo "target/ocr-vcpkg-$Architecture"
     if (-not (Test-Path (Join-Path $root '.git'))) {
         & git init $root
         if ($LASTEXITCODE -ne 0) { throw 'Cannot initialize OCR build sources.' }
@@ -20,16 +24,19 @@ try {
     & (Join-Path $root 'bootstrap-vcpkg.bat') -disableMetrics
     if ($LASTEXITCODE -ne 0) { throw 'Cannot bootstrap vcpkg.' }
     # No curl/archive features: OCR cannot fetch remote images or language models.
-    & (Join-Path $root 'vcpkg.exe') install 'tesseract[core]:x64-windows-mypdf' --classic "--overlay-triplets=$repo/packaging/windows/ocr" --disable-metrics
+    $triplet = "$Architecture-windows-mypdf"
+    & (Join-Path $root 'vcpkg.exe') install "tesseract[core]:$triplet" --classic "--overlay-triplets=$repo/packaging/windows/ocr" --disable-metrics
     if ($LASTEXITCODE -ne 0) { throw 'Cannot build the offline OCR engine.' }
-    $installed = Join-Path $root 'installed/x64-windows-mypdf'
+    $installed = Join-Path $root "installed/$triplet"
     $output = [IO.Path]::GetFullPath($OutputDirectory)
     $null = New-Item -ItemType Directory -Path "$output/tessdata", "$output/licenses" -Force
     Copy-Item "$installed/tools/tesseract/tesseract.exe" "$output/tesseract.exe" -Force
     # Static linking must not hide a redistributable dependency available only on CI.
     $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
-    $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-    $dumpbin = Get-ChildItem "$vs/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+    $component = if ($Architecture -eq 'arm64') { 'Microsoft.VisualStudio.Component.VC.Tools.ARM64' } else { 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64' }
+    $vs = & $vswhere -latest -products '*' -requires $component -property installationPath
+    $hostArchitecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+    $dumpbin = Get-ChildItem "$vs/VC/Tools/MSVC/*/bin/Host$hostArchitecture/$Architecture/dumpbin.exe" | Sort-Object FullName -Descending | Select-Object -First 1
     if (-not $dumpbin) { throw 'dumpbin is required to verify the standalone OCR runtime.' }
     $imports = & $dumpbin.FullName /dependents "$output/tesseract.exe"
     if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect OCR runtime dependencies.' }
@@ -52,6 +59,7 @@ try {
     Invoke-WebRequest "https://raw.githubusercontent.com/$($models.repository)/$($models.commit)/LICENSE" -OutFile "$output/licenses/tessdata_fast.txt"
     ($models.models.language -join '+') | Set-Content "$output/languages.txt" -Encoding ascii
     Copy-Item packaging/windows/ocr/models.json "$output/models.json" -Force
+    & (Join-Path $PSScriptRoot 'test-windows-architecture.ps1') -Path "$output/tesseract.exe" -Architecture $Architecture
     $hashes = [ordered]@{}
     foreach ($file in Get-ChildItem $output -Recurse -File | Where-Object Name -ne 'sha256.json') {
         $relative = $file.FullName.Substring($output.Length + 1).Replace('\', '/')

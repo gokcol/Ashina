@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.24)
 project(MyPDFTranslation LANGUAGES C CXX)
+# The pinned CTranslate2 sources recognize lower-case arm64, while Visual
+# Studio reports ARM64. Keep its CPU dispatch aligned with the target platform.
+if(WIN32 AND CMAKE_GENERATOR_PLATFORM STREQUAL "ARM64")
+  set(CMAKE_SYSTEM_PROCESSOR arm64)
+endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")

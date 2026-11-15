@@ -2,9 +2,11 @@
 # the user requests a language; none are bundled into the installer.
 [CmdletBinding()]
 param(
-    [string]$OutputDirectory = 'dist/translation/windows-x64',
-    [string]$BuildDirectory = 'target/translation-windows',
-    [string]$Generator = 'Visual Studio 17 2022'
+    [ValidateSet('x64', 'arm64')][string]$Architecture = 'x64',
+    [string]$OutputDirectory = '',
+    [string]$BuildDirectory = '',
+    [string]$Generator = 'Visual Studio 17 2022',
+    [string]$Toolset = ''
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -12,8 +14,22 @@ if ($env:OS -ne 'Windows_NT') { throw 'Build the Windows native runtime on Windo
 $repo = Split-Path $PSScriptRoot -Parent
 Push-Location $repo
 try {
+    if ($Generator -eq 'auto') {
+        $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+        $version = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationVersion
+        $Generator = switch (([version]$version).Major) {
+            17 { 'Visual Studio 17 2022' }
+            18 { 'Visual Studio 18 2026' }
+            default { throw "Unsupported Visual Studio version: $version" }
+        }
+    }
+    if (-not $OutputDirectory) { $OutputDirectory = "dist/translation/windows-$Architecture" }
+    if (-not $BuildDirectory) { $BuildDirectory = "target/translation-windows-$Architecture" }
     $output = [System.IO.Path]::GetFullPath($OutputDirectory)
-    & cmake -S native/translation-ct2 -B $BuildDirectory -G $Generator -A x64 "-DCMAKE_INSTALL_PREFIX=$output"
+    $platform = if ($Architecture -eq 'arm64') { 'ARM64' } else { 'x64' }
+    $options = @('-DCMAKE_POLICY_VERSION_MINIMUM=3.5')
+    if ($Toolset) { $options += @('-T', $Toolset) }
+    & cmake -S native/translation-ct2 -B $BuildDirectory -G $Generator -A $platform "-DCMAKE_INSTALL_PREFIX=$output" @options
     if ($LASTEXITCODE -ne 0) { throw 'Translation CMake configuration failed.' }
     & cmake --build $BuildDirectory --config Release --target mypdf_ct2 --parallel 4
     if ($LASTEXITCODE -ne 0) { throw 'Translation native build failed.' }

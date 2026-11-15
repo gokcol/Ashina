@@ -12,46 +12,81 @@ on:
       release:
         description: Attach the zip to this release tag (leave empty for a test build)
         default: ""
+      architecture:
+        description: Windows processor architecture
+        type: choice
+        options: [x64, arm64, both]
+        default: x64
 permissions:
   contents: write
 jobs:
   build:
-    # Native translation uses the Visual Studio 17 2022 generator.
-    runs-on: windows-2022
+    name: Windows ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJSON(inputs.architecture == 'both' && '["x64","arm64"]' || inputs.architecture == 'arm64' && '["arm64"]' || '["x64"]') }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'windows-11-arm' || 'windows-2022' }}
     timeout-minutes: 60
+    env:
+      MYPDF_ARCH: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}
       - uses: dtolnay/rust-toolchain@1.93.1
+        with:
+          toolchain: ${{ matrix.arch == 'arm64' && '1.93.1-aarch64-pc-windows-msvc' || '1.93.1-x86_64-pc-windows-msvc' }}
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows-${{ matrix.arch }}
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+          architecture: x64
       - name: Install pinned native build tooling
+        if: matrix.arch == 'x64'
         run: python -m pip install cmake==3.31.6
+      - name: Verify native build host
+        shell: pwsh
+        run: |
+          $expected = if ($env:MYPDF_ARCH -eq 'arm64') { 'aarch64-pc-windows-msvc' } else { 'x86_64-pc-windows-msvc' }
+          if ((rustc -vV) -notcontains "host: $expected") { throw "Expected native Rust host $expected" }
+          if ([Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString() -ine $env:MYPDF_ARCH) { throw 'PowerShell must run natively for DLL tests.' }
+          cmake --version
       - name: Cache offline OCR bundle
         id: ocr-cache
         uses: actions/cache@v4
         with:
-          path: dist/ocr/windows-x64
-          key: windows-ocr-${{ hashFiles('scripts/build-ocr-windows.ps1', 'packaging/windows/ocr/**') }}
+          path: dist/ocr/windows-${{ matrix.arch }}
+          key: windows-ocr-${{ matrix.arch }}-${{ hashFiles('scripts/build-ocr-windows.ps1', 'packaging/windows/ocr/**') }}
       - name: Build offline OCR runtime and language models
         if: steps.ocr-cache.outputs.cache-hit != 'true'
         shell: pwsh
-        run: '& ./scripts/build-ocr-windows.ps1'
+        run: '& ./scripts/build-ocr-windows.ps1 -Architecture $env:MYPDF_ARCH'
       - name: Build and verify offline translation runtime
         shell: pwsh
         run: |
-          & ./scripts/build-translation-windows.ps1
-          & ./scripts/test-translation-runtime.ps1
-          & ./scripts/test-translation-packaging.ps1
+          $options = @{ Architecture = $env:MYPDF_ARCH }
+          if ($env:MYPDF_ARCH -eq 'arm64') {
+            $options.Generator = 'auto'
+            $options.Toolset = 'ClangCL'
+          }
+          & ./scripts/build-translation-windows.ps1 @options
+          & ./scripts/test-translation-runtime.ps1 -Architecture $env:MYPDF_ARCH
+          & ./scripts/test-translation-packaging.ps1 -Architecture $env:MYPDF_ARCH
       - run: cargo build --locked --release --bin mypdf --example ocr_smoke
+      - name: Check native executable architecture
+        shell: pwsh
+        run: '& ./scripts/test-windows-architecture.ps1 -Path target/release/mypdf.exe -Architecture $env:MYPDF_ARCH'
+      - name: Test ARM64 app logic
+        if: matrix.arch == 'arm64'
+        run: cargo test --locked --no-fail-fast
       - name: Verify real offline OCR on a scanned PDF
         shell: pwsh
         run: |
           # Exercise Unicode/spaces in the installed location as well as recognition.
-          & ./scripts/copy-ocr-runtime.ps1 -DestinationDirectory "$pwd/artifacts/OCR Türkçe review"
+          & ./scripts/copy-ocr-runtime.ps1 -Architecture $env:MYPDF_ARCH -DestinationDirectory "$pwd/artifacts/OCR Türkçe review"
           $env:MYPDF_OCR_RUNTIME_DIR = "$pwd/artifacts/OCR Türkçe review/ocr"
           & ./target/release/examples/ocr_smoke.exe
           if ($LASTEXITCODE -ne 0) { throw 'Real OCR smoke test failed.' }
@@ -64,25 +99,33 @@ jobs:
           $version = if ($env:RELEASE) { $env:RELEASE.TrimStart('v') } else {
             (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
           }
-          $name = "MyPDF-$version-windows-x64"
+          $name = "MyPDF-$version-windows-$env:MYPDF_ARCH"
           New-Item -ItemType Directory -Path "pack\MyPDF" | Out-Null
           Copy-Item target\release\mypdf.exe pack\MyPDF\MyPDF.exe
-          Copy-Item -Path @('README.md', 'LICENSE-MIT', 'LICENSE-APACHE', 'THIRD_PARTY_NOTICES.md') -Destination 'pack\MyPDF\'
-          & ./scripts/copy-translation-runtime.ps1 -DestinationDirectory "$pwd\pack\MyPDF"
-          & ./scripts/copy-ocr-runtime.ps1 -DestinationDirectory "$pwd\pack\MyPDF"
+          Copy-Item -Path @('README.md', 'FEATURES.md', 'LICENSE-MIT', 'LICENSE-APACHE', 'THIRD_PARTY_NOTICES.md') -Destination 'pack\MyPDF\'
+          & ./scripts/copy-translation-runtime.ps1 -Architecture $env:MYPDF_ARCH -DestinationDirectory "$pwd\pack\MyPDF"
+          & ./scripts/copy-ocr-runtime.ps1 -Architecture $env:MYPDF_ARCH -DestinationDirectory "$pwd\pack\MyPDF"
           Compress-Archive -Path pack\MyPDF -DestinationPath "$name.zip"
           $hash = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower()
           "$hash  $name.zip" | Out-File -Encoding ascii -NoNewline "$name.zip.sha256"
           "NAME=$name" | Out-File -Encoding utf8 -Append $env:GITHUB_ENV
-          "SETUP=MyPDF-$version-Setup" | Out-File -Encoding utf8 -Append $env:GITHUB_ENV
+          $setup = if ($env:MYPDF_ARCH -eq 'arm64') { "MyPDF-$version-Setup-arm64" } else { "MyPDF-$version-Setup" }
+          "SETUP=$setup" | Out-File -Encoding utf8 -Append $env:GITHUB_ENV
       - name: Installer
         shell: pwsh
         run: |
-          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y | Out-Null }
+          $candidates = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe")
+          $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            choco install innosetup --no-progress -y | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
+            $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
+          if (-not $iscc) { throw 'Inno Setup compiler not found.' }
           # The installer carries the same product version as MyPDF.exe.
           $crate = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
-          & $iscc "/DAppVersion=$crate" "/DSource=$pwd\pack\MyPDF" "/O$pwd" "/F$env:SETUP" packaging\windows\MyPDF.iss
+          $architecture = if ($env:MYPDF_ARCH -eq 'arm64') { 'arm64' } else { 'x64compatible' }
+          & $iscc "/DAppVersion=$crate" "/DAppArchitecture=$architecture" "/DSource=$pwd\pack\MyPDF" "/O$pwd" "/F$env:SETUP" packaging\windows\MyPDF.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $hash = (Get-FileHash "$env:SETUP.exe" -Algorithm SHA256).Hash.ToLower()
           "$hash  $env:SETUP.exe" | Out-File -Encoding ascii -NoNewline "$env:SETUP.exe.sha256"
