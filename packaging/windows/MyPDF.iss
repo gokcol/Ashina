@@ -9,7 +9,7 @@
   #define AppVersion "0.0.0"
 #endif
 #ifndef Source
-  #define Source "..\..\pack\SkyPDF"
+  #define Source "..\..\pack\Ashina"
 #endif
 #ifndef AppArchitecture
   #define AppArchitecture "x64compatible"
@@ -17,18 +17,18 @@
 
 [Setup]
 AppId={{8C4E2F6A-5B1D-4C7E-9A2F-3D6B1E0F7A51}
-AppName=SkyPDF
+AppName=Ashina
 AppVersion={#AppVersion}
-AppVerName=SkyPDF {#AppVersion}
-AppPublisher=SkyPDF contributors
+AppVerName=Ashina {#AppVersion}
+AppPublisher=Ashina contributors
 AppPublisherURL=https://github.com/gokcol/MyPDF
 AppSupportURL=https://github.com/gokcol/MyPDF/issues
 AppUpdatesURL=https://github.com/gokcol/MyPDF/releases
-VersionInfoProductName=SkyPDF
+VersionInfoProductName=Ashina
 VersionInfoProductVersion={#AppVersion}
 VersionInfoVersion={#AppVersion}
-VersionInfoDescription=SkyPDF installer
-VersionInfoCopyright=© 2026 SkyPDF contributors · MIT OR Apache-2.0
+VersionInfoDescription=Ashina installer
+VersionInfoCopyright=© 2026 Ashina contributors · MIT OR Apache-2.0
 DefaultDirName={autopf}\MyPDF
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
@@ -38,7 +38,7 @@ ArchitecturesInstallIn64BitMode={#AppArchitecture}
 MinVersion=10.0
 SetupIconFile=MyPDF.ico
 UninstallDisplayIcon={app}\MyPDF.exe
-UninstallDisplayName=SkyPDF
+UninstallDisplayName=Ashina
 InfoBeforeFile=before-install.txt
 ChangesAssociations=yes
 WizardStyle=modern
@@ -50,8 +50,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
 
 [CustomMessages]
-english.OpenWith=Add SkyPDF to the "Open with" menu for PDF files
-turkish.OpenWith=SkyPDF'i PDF dosyalarının "Birlikte aç" menüsüne ekle
+english.OpenWith=Add Ashina to the "Open with" menu for PDF files
+turkish.OpenWith=Ashina’yı PDF dosyalarının "Birlikte aç" menüsüne ekle
 english.Integration=Windows integration:
 turkish.Integration=Windows ile bütünleşme:
 
@@ -83,24 +83,26 @@ Source: "{#Source}\ocr\licenses\*"; DestDir: "{app}\ocr\licenses"; Flags: ignore
 [InstallDelete]
 Type: files; Name: "{autoprograms}\MyPDF.lnk"
 Type: files; Name: "{autodesktop}\MyPDF.lnk"
+Type: files; Name: "{autoprograms}\SkyPDF.lnk"
+Type: files; Name: "{autodesktop}\SkyPDF.lnk"
 
 [Icons]
-Name: "{autoprograms}\SkyPDF"; Filename: "{app}\MyPDF.exe"
-Name: "{autodesktop}\SkyPDF"; Filename: "{app}\MyPDF.exe"; Tasks: desktopicon
+Name: "{autoprograms}\Ashina"; Filename: "{app}\MyPDF.exe"
+Name: "{autodesktop}\Ashina"; Filename: "{app}\MyPDF.exe"; Tasks: desktopicon
 
 [Registry]
 ; Let ShellExecute locate this per-user or all-users installation by name.
 Root: HKA; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\MyPDF.exe"; ValueType: string; ValueName: ""; ValueData: "{app}\MyPDF.exe"; Flags: uninsdeletekey
 ; "Open with" for PDF files. The default PDF app stays as it is, and
 ; uninstalling removes these entries again.
-Root: HKA; Subkey: "Software\Classes\Applications\MyPDF.exe"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "SkyPDF"; Flags: uninsdeletekey; Tasks: openwith
+Root: HKA; Subkey: "Software\Classes\Applications\MyPDF.exe"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "Ashina"; Flags: uninsdeletekey; Tasks: openwith
 Root: HKA; Subkey: "Software\Classes\Applications\MyPDF.exe\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\MyPDF.exe,0"; Tasks: openwith
 Root: HKA; Subkey: "Software\Classes\Applications\MyPDF.exe\SupportedTypes"; ValueType: string; ValueName: ".pdf"; ValueData: ""; Tasks: openwith
 Root: HKA; Subkey: "Software\Classes\Applications\MyPDF.exe\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\MyPDF.exe"" ""%1"""; Tasks: openwith
 Root: HKA; Subkey: "Software\Classes\MyPDF.Document"; ValueType: string; ValueName: ""; ValueData: "PDF Document"; Flags: uninsdeletekey; Tasks: openwith
-Root: HKA; Subkey: "Software\Classes\MyPDF.Document\Application"; ValueType: string; ValueName: "ApplicationName"; ValueData: "SkyPDF"; Tasks: openwith
+Root: HKA; Subkey: "Software\Classes\MyPDF.Document\Application"; ValueType: string; ValueName: "ApplicationName"; ValueData: "Ashina"; Tasks: openwith
 Root: HKA; Subkey: "Software\Classes\MyPDF.Document\Application"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "Read, edit, annotate and sign PDF files on your computer."; Tasks: openwith
-Root: HKA; Subkey: "Software\Classes\MyPDF.Document\Application"; ValueType: string; ValueName: "ApplicationCompany"; ValueData: "SkyPDF contributors"; Tasks: openwith
+Root: HKA; Subkey: "Software\Classes\MyPDF.Document\Application"; ValueType: string; ValueName: "ApplicationCompany"; ValueData: "Ashina contributors"; Tasks: openwith
 Root: HKA; Subkey: "Software\Classes\MyPDF.Document\Application"; ValueType: string; ValueName: "ApplicationIcon"; ValueData: "{app}\MyPDF.exe,0"; Tasks: openwith
 Root: HKA; Subkey: "Software\Classes\MyPDF.Document\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\MyPDF.exe,0"; Tasks: openwith
 Root: HKA; Subkey: "Software\Classes\MyPDF.Document\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\MyPDF.exe"" ""%1"""; Tasks: openwith
@@ -108,11 +110,11 @@ Root: HKA; Subkey: "Software\Classes\.pdf\OpenWithProgids"; ValueType: string; V
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.pdf\OpenWithProgids"; ValueType: string; ValueName: "MyPDF.Document"; ValueData: ""; Flags: uninsdeletevalue; Tasks: openwith
 ; Windows Settings discovers desktop default-app candidates through these
 ; capabilities, in addition to the Shell's OpenWithProgids registration above.
-Root: HKA; Subkey: "Software\MyPDF\Capabilities"; ValueType: string; ValueName: "ApplicationName"; ValueData: "SkyPDF"; Flags: uninsdeletekey; Tasks: openwith
+Root: HKA; Subkey: "Software\MyPDF\Capabilities"; ValueType: string; ValueName: "ApplicationName"; ValueData: "Ashina"; Flags: uninsdeletekey; Tasks: openwith
 Root: HKA; Subkey: "Software\MyPDF\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "Read, edit, annotate and sign PDF files on your computer."; Tasks: openwith
 Root: HKA; Subkey: "Software\MyPDF\Capabilities"; ValueType: string; ValueName: "ApplicationIcon"; ValueData: "{app}\MyPDF.exe,0"; Tasks: openwith
 Root: HKA; Subkey: "Software\MyPDF\Capabilities\FileAssociations"; ValueType: string; ValueName: ".pdf"; ValueData: "MyPDF.Document"; Tasks: openwith
 Root: HKA; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueName: "MyPDF"; ValueData: "Software\MyPDF\Capabilities"; Flags: uninsdeletevalue; Tasks: openwith
 
 [Run]
-Filename: "{app}\MyPDF.exe"; Description: "{cm:LaunchProgram,SkyPDF}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\MyPDF.exe"; Description: "{cm:LaunchProgram,Ashina}"; Flags: nowait postinstall skipifsilent

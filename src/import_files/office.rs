@@ -157,7 +157,7 @@ fn word(input: &Path, output: &Path) -> Result<()> {
         .args(["-e", include_str!("word.applescript")])
         .arg(input)
         .arg(output))
-    .context("Word must be licensed and allowed to receive automation requests from SkyPDF")
+    .context("Word must be licensed and allowed to receive automation requests from Ashina")
 }
 #[cfg(target_os = "windows")]
 fn word(input: &Path, output: &Path) -> Result<()> {

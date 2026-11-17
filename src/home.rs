@@ -102,7 +102,7 @@ impl History {
             .write(true)
             .open(lock_path)?;
         lock.try_lock()
-            .context("Home history is being updated by another SkyPDF window")?;
+            .context("Home history is being updated by another Ashina window")?;
         // Re-read under the lock so another window's favorites are never overwritten.
         let mut entries = Self::read(&self.root)?;
         apply(&mut entries);

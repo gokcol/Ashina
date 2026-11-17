@@ -46,7 +46,7 @@ const char *mypdf_updater_check(void (*wake)(void), bool background) {
         NSError *error = nil;
         NSBundle *framework = path ? [NSBundle bundleWithPath:path] : nil;
         if (!framework || ![framework loadAndReturnError:&error]) {
-            lastError = error.localizedDescription ?: @"The updater is missing. Install a complete SkyPDF app bundle.";
+            lastError = error.localizedDescription ?: @"The updater is missing. Install a complete Ashina app bundle.";
             return lastError.UTF8String;
         }
         Class cls = NSClassFromString(@"SPUStandardUpdaterController");

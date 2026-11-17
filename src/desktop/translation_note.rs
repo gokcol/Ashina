@@ -166,7 +166,7 @@ impl Viewer {
             },
         );
         note.object.name = title;
-        note.object.review.author = "SkyPDF Translation".into();
+        note.object.review.author = "Ashina Translation".into();
         note.object.review.created = mypdf_milestone0::review::timestamp();
         let mut annotations = session.annotations.clone();
         annotations.push(note.clone());

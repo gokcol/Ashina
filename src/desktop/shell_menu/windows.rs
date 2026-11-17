@@ -93,7 +93,7 @@ impl Publisher {
                 }
                 let before = removed.clone();
                 if let Err(error) = update(&snapshot, &mut removed) {
-                    eprintln!("Could not update the SkyPDF Jump List: {error}");
+                    eprintln!("Could not update the Ashina Jump List: {error}");
                 }
                 if removed != before
                     && let Err(error) = preferences::save(&root, "jump-list-removed.json", &removed)

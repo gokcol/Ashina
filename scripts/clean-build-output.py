@@ -27,7 +27,7 @@ STATE_FILES = {
 PROTECTED_DIRS = {"recovery", "user-data", "mypdf-user-data", "documents", "preserved", "identity", "identities", "certificates"}
 BUILDERS = {"cargo", "rustc", "swiftc", "swift-frontend", "xcodebuild", "cmake", "ninja", "make", "clang", "clang++", "cc", "c++", "ld"}
 PACKAGE_NAME = re.compile(
-    r"(?:MyPDF|SkyPDF)-(?:\d+\.){1,3}\d+(?:-(?:Setup(?:-arm64)?|windows-(?:x64|arm64)|store-x64|test-x64))?\.(?:dmg|msix|exe|zip)",
+    r"(?:MyPDF|SkyPDF|Ashina)-(?:\d+\.){1,3}\d+(?:-(?:Setup(?:-arm64)?|windows-(?:x64|arm64)|store-x64|test-x64))?\.(?:dmg|msix|exe|zip)",
     re.IGNORECASE,
 )
 
@@ -47,7 +47,7 @@ def protected(path: Path, root: Path) -> bool:
         return True
     # Keep the current development bundle and all copies of this version's
     # downloaded release packages, even when also consolidated in dist/release.
-    if parts[:2] in (("dist", "MyPDF.app"), ("dist", "SkyPDF.app")):
+    if parts[:2] in (("dist", "MyPDF.app"), ("dist", "SkyPDF.app"), ("dist", "Ashina.app")):
         return True
     version = current_version(root)
     if version and any(p == f"release-{version}" or p.startswith(f"release-{version}-") for p in parts):

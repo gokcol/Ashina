@@ -257,7 +257,7 @@ fn change(
 pub fn compare(older: &[PageText], newer: &[PageText]) -> Result<Vec<Change>, String> {
     let (a, b) = (words(older), words(newer));
     if a.is_empty() && b.is_empty() {
-        return Err("These documents have no text SkyPDF can read. If they are scans, use Recognize Text on each one first.".into());
+        return Err("These documents have no text Ashina can read. If they are scans, use Recognize Text on each one first.".into());
     }
     let lines = |words: &[Word]| -> Vec<(String, std::ops::Range<usize>)> {
         let mut out: Vec<(String, std::ops::Range<usize>)> = vec![];

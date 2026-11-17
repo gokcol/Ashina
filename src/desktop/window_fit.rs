@@ -154,7 +154,7 @@ mod tests {
             let window = HiddenWindow(CreateWindowExW(
                 0,
                 windows_sys::core::w!("STATIC"),
-                windows_sys::core::w!("SkyPDF startup sizing test"),
+                windows_sys::core::w!("Ashina startup sizing test"),
                 WS_OVERLAPPEDWINDOW,
                 work.left,
                 work.top,

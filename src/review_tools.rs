@@ -144,7 +144,7 @@ pub fn import_comments(bytes: &[u8], input: &[u8]) -> Result<Vec<Annotation>> {
         "Review file exceeds 64 MB"
     );
     let exchange: Exchange =
-        serde_json::from_slice(input).context("Choose a SkyPDF review file (.mypdf-review)")?;
+        serde_json::from_slice(input).context("Choose a Ashina review file (.mypdf-review)")?;
     ensure!(
         exchange.format == "MyPDF review comments" && exchange.version == 1,
         "Unsupported review file version"
@@ -283,7 +283,7 @@ pub fn pdf_summary(
         })
         .collect::<Result<_>>()?;
     let all_text = format!(
-        "SkyPDF Review summary Continued 0123456789{}",
+        "Ashina Review summary Continued 0123456789{}",
         descriptions.join("\n")
     );
     ensure!(
@@ -336,9 +336,9 @@ pub fn pdf_summary(
                 ));
             }
             let title = if part == 0 {
-                "SkyPDF Review summary"
+                "Ashina Review summary"
             } else {
-                "SkyPDF Review summary · Continued"
+                "Ashina Review summary · Continued"
             };
             body.push_str(&format!(
                 "BT /F0 16 Tf 0.12 0.14 0.18 rg 1 0 0 1 28 798 Tm <{}> Tj ET\n",

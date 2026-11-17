@@ -191,7 +191,7 @@ mod tests {
                 pos2(rect.x1 as f32, rect.y1 as f32),
             )
         };
-        (app, ctx, bounds("SkyPDF"), bounds("Home"))
+        (app, ctx, bounds("Ashina"), bounds("Home"))
     }
 
     #[test]

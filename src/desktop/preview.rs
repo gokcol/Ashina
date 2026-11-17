@@ -767,7 +767,7 @@ fn capture_scene(collection: &str, theme: egui::Theme, root: Option<&std::path::
         {
             let path = fixture.path().join(format!("{name}.pdf"));
             let mut text = format!(
-                "# {name}\n\nSkyPDF workspace\n\nA place for your documents and ideas.\n\n## Notes\n\nOpen a PDF to read, annotate, edit, or sign.\n\nKeep your important files in Favorites."
+                "# {name}\n\nAshina workspace\n\nA place for your documents and ideas.\n\n## Notes\n\nOpen a PDF to read, annotate, edit, or sign.\n\nKeep your important files in Favorites."
             );
             if i == 5 {
                 for note in 1..=40 {
@@ -1966,8 +1966,8 @@ fn properties_visual_preview() {
             "Çağrı Öztürk",
             "Review copy",
             "report; review",
-            "SkyPDF",
-            "SkyPDF",
+            "Ashina",
+            "Ashina",
         ]
         .map(str::to_string),
     };

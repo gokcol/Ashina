@@ -1,6 +1,6 @@
 # Third-party source and local changes
 
-The Rust dependency versions and registry checksums are pinned in `Cargo.lock`; local source patches are listed below. Each dependency retains its declared license. SkyPDF (formerly MyPDF) itself is licensed under MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`). A complete license audit of the dependencies is still required before publishing binaries.
+The Rust dependency versions and registry checksums are pinned in `Cargo.lock`; local source patches are listed below. Each dependency retains its declared license. Ashina itself is licensed under MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`). A complete license audit of the dependencies is still required before publishing binaries.
 
 ## Vendored underskrift
 

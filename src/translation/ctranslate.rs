@@ -312,7 +312,7 @@ fn download(
     let client = reqwest::Client::builder()
         .https_only(true)
         .http1_only()
-        .user_agent(concat!("SkyPDF/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("Ashina/", env!("CARGO_PKG_VERSION")))
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_secs(15))
         .read_timeout(Duration::from_secs(15))
@@ -336,7 +336,7 @@ fn download(
             .is_some_and(|size| size != pack.bytes)
         {
             return Err(
-                "The language download size changed. Update SkyPDF before installing this pack."
+                "The language download size changed. Update Ashina before installing this pack."
                     .to_owned(),
             );
         }
@@ -513,7 +513,7 @@ impl Runtime {
             .unwrap_or(path);
         // Only an absolute app-bundled path is loaded. Never search PATH/CWD.
         if !path.is_absolute() || !path.is_file() {
-            return Err("The native offline translation engine is missing. Reinstall the complete SkyPDF Windows package. No cloud fallback is used.".into());
+            return Err("The native offline translation engine is missing. Reinstall the complete Ashina Windows package. No cloud fallback is used.".into());
         }
         unsafe {
             #[cfg(target_os = "windows")]

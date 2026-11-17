@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-    <key>CFBundleName</key><string>SkyPDF</string>
-    <key>CFBundleDisplayName</key><string>SkyPDF</string>
+    <key>CFBundleName</key><string>Ashina</string>
+    <key>CFBundleDisplayName</key><string>Ashina</string>
     <key>CFBundleIdentifier</key><string>dev.mypdf.desktop</string>
     <key>CFBundleExecutable</key><string>MyPDF</string>
     <key>CFBundleIconFile</key><string>MyPDF-calico-v2</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>3.1.2</string>
-    <key>CFBundleVersion</key><string>245</string>
+    <key>CFBundleShortVersionString</key><string>3.1.3</string>
+    <key>CFBundleVersion</key><string>246</string>
     <key>SUFeedURL</key><string>https://github.com/gokcol/MyPDF/releases/latest/download/appcast.xml</string>
     <key>SUPublicEDKey</key><string>cjPMzBooZA6Ic435ct/rREcAG3jZ1//+JpCQjp02zxQ=</string>
     <key>SUEnableAutomaticChecks</key><false/>
@@ -20,7 +20,7 @@
     <key>LSMinimumSystemVersion</key><string>12.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSMicrophoneUsageDescription</key><string>Record a voice comment when you choose Record in a PDF note. Audio stays on your computer and is embedded when you save the PDF.</string>
-    <key>NSAppleEventsUsageDescription</key><string>SkyPDF uses Microsoft Word to convert DOCX and RTF documents to PDF for insertion.</string>
+    <key>NSAppleEventsUsageDescription</key><string>Ashina uses Microsoft Word to convert DOCX and RTF documents to PDF for insertion.</string>
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>CFBundleDocumentTypes</key>
     <array><dict>
@@ -29,5 +29,5 @@
         <key>LSHandlerRank</key><string>Alternate</string>
         <key>LSItemContentTypes</key><array><string>com.adobe.pdf</string></array>
     </dict></array>
-    <key>NSHumanReadableCopyright</key><string>© 2026 SkyPDF contributors · MIT OR Apache-2.0</string>
+    <key>NSHumanReadableCopyright</key><string>© 2026 Ashina contributors · MIT OR Apache-2.0</string>
 </dict></plist>

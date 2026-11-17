@@ -25,7 +25,9 @@ import uuid
 
 REGISTER = Path('/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister')
 # The bundle identity and executable remain stable across the public rename.
-INSTALLED = Path('/Applications/SkyPDF.app')
+INSTALLED = Path('/Applications/Ashina.app')
+if not INSTALLED.exists():
+    INSTALLED = Path('/Applications/SkyPDF.app')
 if not INSTALLED.exists():
     INSTALLED = Path('/Applications/MyPDF.app')
 REPOSITORY = Path(__file__).resolve().parents[1]

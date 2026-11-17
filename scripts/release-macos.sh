@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build SkyPDF for Apple Silicon, sign it with a Developer ID, notarize and
+# Build Ashina for Apple Silicon, sign it with a Developer ID, notarize and
 # staple it, and wrap it in a signed, notarized disk image.
 #
 #   MYPDF_SIGN_IDENTITY="Developer ID Application: Name (TEAMID)" \
@@ -55,8 +55,8 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 work=$(mktemp -d dist/.release-work.XXXXXX)
 out=$work/release
-app=$out/SkyPDF.app
-dmg=$out/SkyPDF-$version.dmg
+app=$out/Ashina.app
+dmg=$out/Ashina-$version.dmg
 
 # Submit a file to Apple's notary service and fail unless it is accepted.
 notarize() {
@@ -180,7 +180,7 @@ codesign --force --options runtime --entitlements packaging/entitlements.plist -
 codesign --verify --strict --verbose=2 "$app"
 
 if [ -n "$profile" ]; then
-    zip=$out/SkyPDF-notarize.zip
+    zip=$out/Ashina-notarize.zip
     ditto -c -k --keepParent "$app" "$zip"
     notarize "$zip"
     rm "$zip"
@@ -190,9 +190,9 @@ fi
 
 stage=$out/stage
 mkdir -p "$stage"
-ditto "$app" "$stage/SkyPDF.app"
+ditto "$app" "$stage/Ashina.app"
 ln -s /Applications "$stage/Applications"
-hdiutil create -volname "SkyPDF $version" -srcfolder "$stage" -ov -format UDZO "$dmg"
+hdiutil create -volname "Ashina $version" -srcfolder "$stage" -ov -format UDZO "$dmg"
 rm -rf "$stage"
 codesign --force --timestamp --sign "$identity" "$dmg"
 if [ -n "$profile" ]; then
@@ -217,4 +217,4 @@ if [ -e dist/release ]; then
     mv dist/release dist/rollback
 fi
 mv "$out" dist/release
-echo "Built $PWD/dist/release/SkyPDF-$version.dmg (previous release: dist/rollback)"
+echo "Built $PWD/dist/release/Ashina-$version.dmg (previous release: dist/rollback)"

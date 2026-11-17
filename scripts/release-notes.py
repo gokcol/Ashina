@@ -17,7 +17,8 @@ def render(changelog, version):
     changes = notes["changes"]
     if not all(isinstance(c, str) and c.strip() for c in changes):
         raise ValueError("Release changes must be nonempty strings")
-    brand = "SkyPDF" if tuple(map(int, version.split("."))) >= (3, 1, 2) else "MyPDF"
+    number = tuple(map(int, version.split(".")))
+    brand = "Ashina" if number >= (3, 1, 3) else "SkyPDF" if number >= (3, 1, 2) else "MyPDF"
     github = f"## {brand} {version}\n\n" + "\n".join(f"- {c}" for c in changes) + "\n"
     store = f"{brand} {version}\n\n" + "\n".join(f"• {c}" for c in changes) + "\n"
     if len(store) > 1500:

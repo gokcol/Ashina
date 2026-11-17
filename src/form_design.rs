@@ -1084,7 +1084,7 @@ fn acroform(doc: &mut Document) -> Result<ObjectId> {
     let form = doc.get_dictionary(id)?.clone();
     ensure!(
         !form.has(b"XFA"),
-        "This PDF uses an XFA form. SkyPDF works with standard PDF forms."
+        "This PDF uses an XFA form. Ashina works with standard PDF forms."
     );
     let fields = form
         .get(b"Fields")
@@ -1257,7 +1257,7 @@ pub fn describe(bytes: &[u8]) -> Result<Vec<Designed>> {
     }
     ensure!(
         !acroform_dict(&doc).is_some_and(|f| f.has(b"XFA")),
-        "This PDF uses an XFA form. SkyPDF works with standard PDF forms."
+        "This PDF uses an XFA form. Ashina works with standard PDF forms."
     );
     let geometry = crate::annotations::page_geometry(bytes)?;
     let (pages, _) = page_map(&doc);
@@ -1687,7 +1687,7 @@ fn write_properties(
     if kind == FieldType::Image {
         let d = doc.get_dictionary_mut(field)?;
         d.set("MyPDFKind", "Image");
-        // Lets people choose a picture in Adobe Acrobat; SkyPDF never runs scripts.
+        // Lets people choose a picture in Adobe Acrobat; Ashina never runs scripts.
         let target = widgets.first().copied().unwrap_or(field);
         doc.get_dictionary_mut(target)?
             .set("A", js_action("event.target.buttonImportIcon();"));

@@ -780,7 +780,7 @@ impl Library {
             .write(true)
             .open(self.root.join("assets.lock"))?;
         lock.try_lock()
-            .context("The asset library is being saved by another SkyPDF window")?;
+            .context("The asset library is being saved by another Ashina window")?;
         let path = self.root.join("assets.json");
         ensure!(!path.is_symlink(), "The library file cannot be a symlink");
         let before = match std::fs::read(&path) {

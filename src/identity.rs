@@ -20,7 +20,7 @@ pub fn create(name: &str, password: &str, ecdsa: bool) -> Result<CreatedIdentity
     create_personal(
         &PersonalId {
             name: name.into(),
-            organization: "SkyPDF personal digital ID".into(),
+            organization: "Ashina personal digital ID".into(),
             email: String::new(),
             validity_days: 365,
             ecdsa,

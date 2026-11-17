@@ -1671,7 +1671,7 @@ impl Viewer {
                                 mypdf_milestone0::header_footer::remove(&bytes, &kinds)?;
                             anyhow::ensure!(
                                 pages > 0,
-                                "No header or footer text added by SkyPDF was found"
+                                "No header or footer text added by Ashina was found"
                             );
                             note = Some(format!(
                                 "Removed from {pages} page{} • Undo restores it",

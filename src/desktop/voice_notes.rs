@@ -26,7 +26,7 @@ impl Viewer {
         };
         let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) else {
             self.editor.voice.error =
-                Some("Recording retained in memory. Save the audio before closing SkyPDF.".into());
+                Some("Recording retained in memory. Save the audio before closing Ashina.".into());
             return false;
         };
         let Some(mut note) = tab
@@ -35,7 +35,7 @@ impl Viewer {
             .and_then(|s| s.annotations.iter().find(|a| a.id == id))
             .cloned()
         else {
-            self.editor.voice.error = Some("The note is unavailable. The recording is retained; save its audio before closing SkyPDF.".into());
+            self.editor.voice.error = Some("The note is unavailable. The recording is retained; save its audio before closing Ashina.".into());
             return false;
         };
         note.voice = Some(clip);
@@ -83,7 +83,7 @@ impl Viewer {
                 }
                 1 | 2 => {
                     self.editor.voice.pending_permission = false;
-                    self.editor.voice.error = Some("Microphone access is disabled. Allow SkyPDF in System Settings → Privacy & Security → Microphone, then try Record again.".into());
+                    self.editor.voice.error = Some("Microphone access is disabled. Allow Ashina in System Settings → Privacy & Security → Microphone, then try Record again.".into());
                 }
                 _ => {
                     ctx.request_repaint_after(std::time::Duration::from_millis(100));
@@ -362,7 +362,7 @@ impl Viewer {
             match voice_audio::permission(true) {
                 3 => self.start_voice_stream(),
                 0 => self.editor.voice.pending_permission = true,
-                _ => self.editor.voice.error = Some("Microphone access is disabled. Allow SkyPDF in your system privacy settings, then try again.".into()),
+                _ => self.editor.voice.error = Some("Microphone access is disabled. Allow Ashina in your system privacy settings, then try again.".into()),
             }
         }
         if play {

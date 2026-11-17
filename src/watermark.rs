@@ -333,7 +333,7 @@ fn mentions(stream: &Stream) -> bool {
     raw.windows(MARK.len()).any(|w| w == MARK)
 }
 
-/// The number of pages carrying a watermark added by SkyPDF.
+/// The number of pages carrying a watermark added by Ashina.
 pub fn count(bytes: &[u8]) -> Result<usize> {
     let doc = Document::load_mem(bytes)?;
     let mut pages = 0;
@@ -350,7 +350,7 @@ pub fn count(bytes: &[u8]) -> Result<usize> {
     Ok(pages)
 }
 
-/// Remove every watermark SkyPDF added. Returns the new bytes and the pages changed.
+/// Remove every watermark Ashina added. Returns the new bytes and the pages changed.
 pub fn remove(bytes: &[u8]) -> Result<(Vec<u8>, usize)> {
     let mut doc = crate::content::editable(bytes)?;
     let mut changed = 0;
@@ -418,6 +418,6 @@ pub fn remove(bytes: &[u8]) -> Result<(Vec<u8>, usize)> {
             kept.into_iter().map(Object::Reference).collect::<Vec<_>>(),
         );
     }
-    ensure!(changed > 0, "This PDF has no watermark added by SkyPDF");
+    ensure!(changed > 0, "This PDF has no watermark added by Ashina");
     Ok((crate::content::serialize(&mut doc)?, changed))
 }

@@ -12,7 +12,7 @@ fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all(&out)?;
     for size in [300, 150, 71] {
         image::save_buffer(
-            out.join(format!("SkyPDF-logo-{size}x{size}.png")),
+            out.join(format!("Ashina-logo-{size}x{size}.png")),
             &icon::rgba(size),
             size,
             size,

@@ -14,15 +14,15 @@ ROLLBACK_DATA = {
 def add_rollback_data(root):
  for relative, data in ROLLBACK_DATA.items():
   path=root/relative;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(data)
- (root/'SkyPDF.app').mkdir(exist_ok=True)
- (root/'SkyPDF.app/old-binary').write_text('Do not archive obsolete binaries')
+ (root/'Ashina.app').mkdir(exist_ok=True)
+ (root/'Ashina.app/old-binary').write_text('Do not archive obsolete binaries')
 
 def assert_rollback_data(root):
  for relative, data in ROLLBACK_DATA.items():assert (root/relative).read_bytes()==data,(root,relative)
 
 def assert_archive(root):
  assert_rollback_data(root)
- assert not (root/'SkyPDF.app').exists()
+ assert not (root/'Ashina.app').exists()
  manifest=(root/'manifest.json').read_bytes()
  assert root.name=='rollback-data-'+hashlib.sha256(manifest).hexdigest()
  entries=json.loads(manifest)['entries']
@@ -49,7 +49,7 @@ elif name=='cargo':
 elif name=='sips':out(arg('--out'))
 elif name=='iconutil':out(arg('-o'))
 elif name=='codesign':
- if args[-1].endswith('/SkyPDF.app') and '--sign' in args:
+ if args[-1].endswith('/Ashina.app') and '--sign' in args:
   info=plistlib.loads((pathlib.Path(args[-1])/'Contents/Info.plist').read_bytes())
   expected=os.environ['EXPECT_DOCUMENT_HANDLERS']=='yes'
   assert ('CFBundleDocumentTypes' in info)==expected,(info,expected)
@@ -89,7 +89,7 @@ def run_case(label,host='aarch64-apple-darwin',failure=None,old=True,rollback=Tr
   for name in ['uname','rustc','cargo','sips','iconutil','codesign','ditto','xcrun','spctl','hdiutil','mv']:(d/'bin'/name).symlink_to('stub')
   for name,text in [('settings','settings-unchanged'),('stamps','stamps-unchanged'),('recovery','recovery-unchanged')]:
    (d/name).write_text(text)
-  for path,text,enabled in [('dist/release','current-release',old),('dist/rollback','previous-rollback',rollback),('dist/SkyPDF.app','dev-bundle',True)]:
+  for path,text,enabled in [('dist/release','current-release',old),('dist/rollback','previous-rollback',rollback),('dist/Ashina.app','dev-bundle',True)]:
    if enabled:(d/path).mkdir(parents=True);(d/path/'sentinel').write_text(text)
   if rollback:add_rollback_data(d/'dist/rollback')
   if failure=='archive-write':
@@ -98,7 +98,7 @@ def run_case(label,host='aarch64-apple-darwin',failure=None,old=True,rollback=Tr
    (d/'do-not-copy').mkdir();(d/'do-not-copy/secret').write_text('outside snapshot')
    (d/'dist/rollback/user-data/external').symlink_to(d/'do-not-copy',target_is_directory=True)
   env={**os.environ,'PATH':str(d/'bin')+':'+os.environ['PATH'],'STUB_LOG':str(d/'commands.jsonl'),'STUB_HOST':host,'FIXTURE_ROOT':str(d),'MYPDF_SIGN_IDENTITY':'fixture-identity','MYPDF_NOTARY_PROFILE':'fixture-profile','CARGO_TARGET_DIR':'build-cache'}
-  bundle_output=pathlib.Path(output or 'dist/SkyPDF.app')
+  bundle_output=pathlib.Path(output or 'dist/Ashina.app')
   handlers=not bundle or not (debug or review or bundle_output.name.lower().endswith('review.app'))
   env['EXPECT_DOCUMENT_HANDLERS']='yes' if handlers else 'no'
   if failure:env['FAIL_STAGE']=failure
@@ -126,7 +126,7 @@ def run_case(label,host='aarch64-apple-darwin',failure=None,old=True,rollback=Tr
    candidates=list((d/'dist').glob('.release-work.*'));assert len(candidates)==1
    assert (candidates[0]/'previous-rollback/sentinel').read_text()=='previous-rollback'
    assert_rollback_data(candidates[0]/'previous-rollback')
-   assert (candidates[0]/f'release/SkyPDF-{VERSION}.dmg').exists()
+   assert (candidates[0]/f'release/Ashina-{VERSION}.dmg').exists()
    assert (d/'dist/.release-lock').exists()
    print('PASS',label)
    return
@@ -148,13 +148,13 @@ def run_case(label,host='aarch64-apple-darwin',failure=None,old=True,rollback=Tr
    # Packaging a review never edits the product plist or an existing release.
    assert (d/'packaging/Info.plist').read_bytes()==(ROOT/'packaging/Info.plist').read_bytes()
   else:
-   assert (d/'dist/release/SkyPDF.app/Contents/MacOS/MyPDF').read_text()=='new-app-aarch64-apple-darwin',label
-   assert (d/f'dist/release/SkyPDF-{VERSION}.dmg.sha256').is_file(),label
+   assert (d/'dist/release/Ashina.app/Contents/MacOS/MyPDF').read_text()=='new-app-aarch64-apple-darwin',label
+   assert (d/f'dist/release/Ashina-{VERSION}.dmg.sha256').is_file(),label
    if old:assert (d/'dist/rollback/sentinel').read_text()=='current-release',label
    elif rollback:
     assert (d/'dist/rollback/sentinel').read_text()=='previous-rollback',label
     assert_rollback_data(d/'dist/rollback')
-   assert (d/'dist/SkyPDF.app/sentinel').read_text()=='dev-bundle',label
+   assert (d/'dist/Ashina.app/sentinel').read_text()=='dev-bundle',label
   for name in ['settings','stamps','recovery']:assert (d/name).read_text()==name+'-unchanged'
   assert not list((d/'dist').glob('.release-*')),(label,list((d/'dist').iterdir()))
   assert not list((d/'dist').glob('.mypdf-bundle.*')),label
@@ -172,7 +172,7 @@ def run_case(label,host='aarch64-apple-darwin',failure=None,old=True,rollback=Tr
     assert (d/'dist/rollback/sentinel').read_text()=='previous-rollback'
     assert_rollback_data(d/'dist/rollback')
    else:assert_archive(archives[0])
-   assert (d/'dist/release/SkyPDF.app/Contents/MacOS/MyPDF').read_text()=='new-app-aarch64-apple-darwin'
+   assert (d/'dist/release/Ashina.app/Contents/MacOS/MyPDF').read_text()=='new-app-aarch64-apple-darwin'
    assert not list((d/'dist').glob('.release-*'))
   print('PASS',label)
 run_case('ARM64 release: one compile and rollback rotation')
@@ -184,8 +184,8 @@ run_case('native bundle',bundle=True)
 run_case('native debug bundle',bundle=True,debug=True)
 run_case('optimized review bundle has no document handlers before signing',bundle=True,review='--review')
 run_case('no-document-handlers alias',bundle=True,review='--no-document-handlers')
-run_case('review output name excludes handlers case-insensitively',bundle=True,output='dist/SkyPDF rEvIeW.app')
-run_case('ordinary optimized custom bundle retains PDF handler',bundle=True,output='dist/custom/SkyPDF.app')
+run_case('review output name excludes handlers case-insensitively',bundle=True,output='dist/Ashina rEvIeW.app')
+run_case('ordinary optimized custom bundle retains PDF handler',bundle=True,output='dist/custom/Ashina.app')
 
 run_case('preserve recovery files and lock when restoration fails',failure='restore')
 run_case('archive failure preserves both releases and all user data',failure='archive-write')

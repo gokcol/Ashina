@@ -187,7 +187,7 @@ async fn github(channel: Channel, installed: &str) -> Result<Report> {
         .timeout(Duration::from_secs(20))
         .connect_timeout(Duration::from_secs(8))
         .redirect(reqwest::redirect::Policy::none())
-        .user_agent(concat!("SkyPDF/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("Ashina/", env!("CARGO_PKG_VERSION")))
         .build()?;
     let mut response = client
         .get(API)
@@ -283,7 +283,7 @@ pub fn prepare(window: Option<isize>) -> Result<PendingCheck> {
     let installed = format!("{}.{}.{}.{}", v.Major, v.Minor, v.Build, v.Revision);
     let family = package.Id()?.FamilyName()?;
     let context = StoreContext::GetDefault()?;
-    let owner = window.context("Open the SkyPDF window before checking Microsoft Store updates")?;
+    let owner = window.context("Open the Ashina window before checking Microsoft Store updates")?;
     // Called by the desktop UI thread while eframe owns this HWND. Initialize
     // the context and start the request here; only the async wait leaves it.
     unsafe {
@@ -304,7 +304,7 @@ pub fn prepare(window: Option<isize>) -> Result<PendingCheck> {
             }
         }
         Ok(Report { channel: Channel::Store, installed, available: available.then(|| Available {
-            version: None, notes: "Microsoft Store has an update for SkyPDF. View the new version and its release notes in the Store.".into(), url: STORE_URL.into(),
+            version: None, notes: "Microsoft Store has an update for Ashina. View the new version and its release notes in the Store.".into(), url: STORE_URL.into(),
         }) })
     }))
 }
@@ -377,27 +377,27 @@ mod tests {
     }
     #[test]
     fn windows_updates_keep_the_installed_architecture() {
-        let mut both = release("v3.1.2", "SkyPDF-3.1.2-Setup.exe");
+        let mut both = release("v3.1.2", "Ashina-3.1.2-Setup.exe");
         both["assets"]
             .as_array_mut()
             .unwrap()
-            .push(release("v3.1.2", "SkyPDF-3.1.2-Setup-arm64.exe")["assets"][0].clone());
+            .push(release("v3.1.2", "Ashina-3.1.2-Setup-arm64.exe")["assets"][0].clone());
         let bytes =
-            serde_json::to_vec(&vec![both, release("v3.1.3", "SkyPDF-3.1.3-Setup.exe")]).unwrap();
+            serde_json::to_vec(&vec![both, release("v3.1.3", "Ashina-3.1.3-Setup.exe")]).unwrap();
         let arm = github_report(&bytes, Channel::WindowsArm, "3.1.1")
             .unwrap()
             .available
             .unwrap();
         assert_eq!(arm.version.as_deref(), Some("3.1.2"));
-        assert!(arm.url.ends_with("SkyPDF-3.1.2-Setup-arm64.exe"));
+        assert!(arm.url.ends_with("Ashina-3.1.2-Setup-arm64.exe"));
         let x64 = github_report(&bytes, Channel::Windows, "3.1.1")
             .unwrap()
             .available
             .unwrap();
         assert_eq!(x64.version.as_deref(), Some("3.1.3"));
-        assert!(x64.url.ends_with("SkyPDF-3.1.3-Setup.exe"));
+        assert!(x64.url.ends_with("Ashina-3.1.3-Setup.exe"));
         let arm_only =
-            serde_json::to_vec(&vec![release("v3.1.2", "SkyPDF-3.1.2-Setup-arm64.exe")]).unwrap();
+            serde_json::to_vec(&vec![release("v3.1.2", "Ashina-3.1.2-Setup-arm64.exe")]).unwrap();
         assert!(github_report(&arm_only, Channel::Windows, "3.1.1").is_err());
     }
     #[test]

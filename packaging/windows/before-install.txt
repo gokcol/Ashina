@@ -1,23 +1,23 @@
-SkyPDF was previously named MyPDF. Existing settings and documents remain available.
+Ashina was previously named MyPDF and SkyPDF. Existing settings and documents remain available.
 
-SkyPDF - a PDF editor for reading, annotating, editing, filling forms,
+Ashina - a PDF editor for reading, annotating, editing, filling forms,
 comparing versions and signing.
 
-SkyPDF was built with the help of Claude, Anthropic's AI assistant, to make
+Ashina was built with the help of Claude, Anthropic's AI assistant, to make
 everyday business paperwork easier. It is provided as is, without warranty
 of any kind: keep copies of important documents and use it at your own risk.
 
-Privacy: SkyPDF works on this computer. It does not send your documents or
+Privacy: Ashina works on this computer. It does not send your documents or
 any other information to other computers unless you ask it to, for example
 by opening a web link in a document.
 
 What the installer changes:
-- It copies SkyPDF to the folder you choose and adds it to the Start menu.
-- If you tick the option, it adds SkyPDF to the "Open with" menu for PDF
+- It copies Ashina to the folder you choose and adds it to the Start menu.
+- If you tick the option, it adds Ashina to the "Open with" menu for PDF
   files. Your default PDF app stays the same.
-- You can remove SkyPDF at any time in Settings > Apps; that also removes
+- You can remove Ashina at any time in Settings > Apps; that also removes
   the "Open with" entry. Your saved signatures and details are kept in
   %LOCALAPPDATA%\MyPDF.
 
-SkyPDF is licensed under MIT OR Apache-2.0. Source code:
+Ashina is licensed under MIT OR Apache-2.0. Source code:
 https://github.com/gokcol/MyPDF

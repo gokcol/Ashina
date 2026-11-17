@@ -1424,7 +1424,7 @@ impl Viewer {
                             ui::logo(ui.painter(), mark);
                             ui.add_space(12.);
                             ui.label(
-                                RichText::new("SkyPDF")
+                                RichText::new("Ashina")
                                     .font(ui::bold(ui, 32.))
                                     .color(theme::ink()),
                             );
@@ -1549,7 +1549,7 @@ impl Viewer {
                         if ui.available_width() > 960. {
                             let move_handle = ui.add(
                                 egui::Label::new(
-                                    RichText::new("SkyPDF")
+                                    RichText::new("Ashina")
                                         .font(ui::bold(ui, 14.))
                                         .color(theme::ink()),
                                 )
@@ -2140,7 +2140,7 @@ impl Viewer {
                         ui::shadow(ui.painter(), mark, 18, 2);
                         ui::logo(ui.painter(), mark);
                         ui.add_space(18.0);
-                        ui.label(RichText::new("Welcome to SkyPDF").font(ui::bold(ui, 32.)).color(theme::ink()));
+                        ui.label(RichText::new("Welcome to Ashina").font(ui::bold(ui, 32.)).color(theme::ink()));
                         ui.add_space(10.0);
                         ui.label(
                             RichText::new(

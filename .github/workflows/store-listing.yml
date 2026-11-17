@@ -41,6 +41,6 @@ jobs:
           } | ConvertTo-Json | Set-Content artifacts/store-listing/provenance.json
       - uses: actions/upload-artifact@v6
         with:
-          name: SkyPDF-Store-listing-en-US
+          name: Ashina-Store-listing-en-US
           path: artifacts/store-listing/
           if-no-files-found: error

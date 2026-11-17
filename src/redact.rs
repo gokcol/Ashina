@@ -322,7 +322,7 @@ enum Piece {
     Number(f64),
 }
 
-/// The bytes per character code of a font, when SkyPDF can split its strings.
+/// The bytes per character code of a font, when Ashina can split its strings.
 fn code_width(font: &Dictionary) -> Option<usize> {
     match font.get(b"Subtype").and_then(Object::as_name).ok()? {
         b"Type0" => match font.get(b"Encoding").and_then(Object::as_name).ok()? {
@@ -385,7 +385,7 @@ fn precise(
     let before = probe(bytes, page, &runs, areas, fill)?;
     ensure!(
         !before.untagged_under,
-        "Page {number}: text under a marked area is inside a form object, which SkyPDF can't edit glyph by glyph. Use Flatten pages."
+        "Page {number}: text under a marked area is inside a form object, which Ashina can't edit glyph by glyph. Use Flatten pages."
     );
     let mut doc = crate::content::editable(bytes)?;
     let id = *doc
@@ -424,7 +424,7 @@ fn precise(
         let parts = code_width(font)
             .and_then(|w| pieces(op, w))
             .filter(|p| p.iter().filter(|p| matches!(p, Piece::Code(_))).count() == glyphs.len())
-            .with_context(|| format!("Page {number}: text under a marked area uses a font encoding SkyPDF can't split. Use Flatten pages."))?;
+            .with_context(|| format!("Page {number}: text under a marked area uses a font encoding Ashina can't split. Use Flatten pages."))?;
         let next = continues_at(&operations, run.operator_index)
             .and_then(|i| run_of.get(&i))
             .and_then(|r| before.runs.get(r))

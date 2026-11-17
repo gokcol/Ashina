@@ -41,7 +41,7 @@ pub fn write(path: &Path, bytes: &[u8], expected: Option<Fingerprint>) -> Result
             bail!("The PDF is read-only. Use Save As to save elsewhere");
         }
         if existing(path)? != Some(expected) {
-            bail!("The PDF changed outside SkyPDF. Use Save As to preserve both versions");
+            bail!("The PDF changed outside Ashina. Use Save As to preserve both versions");
         }
         Ok(meta.permissions())
     };

@@ -235,7 +235,7 @@ impl Viewer {
                     ui.add_space(12.);
                     ui::title(ui, "My details", 16.);
                     ui.label(
-                        RichText::new("Enter them once and SkyPDF fills them into forms when you ask. They stay on this computer.")
+                        RichText::new("Enter them once and Ashina fills them into forms when you ask. They stay on this computer.")
                             .size(13.)
                             .color(theme::muted()),
                     );

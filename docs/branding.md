@@ -1,6 +1,8 @@
-# SkyPDF naming and upgrade compatibility
+# Ashina naming and upgrade compatibility
 
-SkyPDF was named MyPDF through version 3.1.1. Version 3.1.2 uses SkyPDF in the desktop interface, About, native menus, Windows product resources and installers, Finder bundle and downloadable packages. The Microsoft Store display name is **SkyPDF (formerly MyPDF)**.
+Ashina was named MyPDF through version 3.1.1 and SkyPDF in version 3.1.2. Version 3.1.3 uses **Ashina** in the desktop interface, About, native menus, Windows product resources and installers, Finder bundle, downloadable packages and Microsoft Store listing.
+
+Microsoft rejected the 3.1.2 Store title under policy 10.1.1.1 (Inaccurate Representation) on November 17, 2026. The replacement Store product name is exactly **Ashina**, reserved on the same product. Do not append former app names to the Store product title. Historical names can be explained in documentation.
 
 These identifiers intentionally remain unchanged:
 
@@ -13,4 +15,4 @@ These identifiers intentionally remain unchanged:
 - The `.mypdf-review` extension and its serialized format identifier, so saved review exchanges work in both versions.
 - Rust crate/binary targets, native library ABI names and icon source filenames. These are implementation names, not the displayed product name.
 
-New release files use `SkyPDF-<version>`. Windows portable ZIPs contain a `SkyPDF` folder with the compatible `MyPDF.exe` executable. Mac installs use `SkyPDF.app`. The Store rename is published through an update to the same product; no replacement product or new user-data migration is required.
+New release files use `Ashina-<version>`. Windows portable ZIPs contain an `Ashina` folder with the compatible `MyPDF.exe` executable. Mac installs use `Ashina.app`. The Store rename is published through an update to the same product; no replacement product or new user-data migration is required.

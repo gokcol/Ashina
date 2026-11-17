@@ -2992,7 +2992,7 @@ pub fn export(bytes: &[u8], annotations: &[Annotation]) -> Result<Vec<u8>> {
             Kind::Polygon { .. } => "PolyLine",
             _ => "Stamp",
         };
-        let mut d = dictionary! { "Type" => "Annot", "Subtype" => subtype, "Rect" => pdf_numbers(rect), "P" => page_id, "F" => (if a.object.hidden { 2 } else { 4 } | if a.object.locked { 128 } else { 0 }), "NM" => Object::string_literal(format!("MyPDF-{}", a.id)), "T" => text_string("SkyPDF"), "C" => pdf_numbers(a.style.color), "CA" => a.style.opacity, "BS" => dictionary! { "W" => a.style.width, "S" => "S" }, "AP" => dictionary! { "N" => ap }, "MyPDFData" => Object::string_literal(serde_json::to_string(a)?) };
+        let mut d = dictionary! { "Type" => "Annot", "Subtype" => subtype, "Rect" => pdf_numbers(rect), "P" => page_id, "F" => (if a.object.hidden { 2 } else { 4 } | if a.object.locked { 128 } else { 0 }), "NM" => Object::string_literal(format!("MyPDF-{}", a.id)), "T" => text_string("Ashina"), "C" => pdf_numbers(a.style.color), "CA" => a.style.opacity, "BS" => dictionary! { "W" => a.style.width, "S" => "S" }, "AP" => dictionary! { "N" => ap }, "MyPDFData" => Object::string_literal(serde_json::to_string(a)?) };
         if let Some(voice) = &a.voice
             && !voice.wav.is_empty()
         {

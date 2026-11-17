@@ -415,7 +415,7 @@ impl Viewer {
         marks.first()?;
         let n = marks.len();
         let marker = format!(
-            "SkyPDF: {n} mark{} from {}",
+            "Ashina: {n} mark{} from {}",
             if n == 1 { "" } else { "s" },
             tab.name()
         );
@@ -519,7 +519,7 @@ impl Viewer {
                 .as_ref()
                 .is_some_and(|m| m.matches(&clip));
             if !ours {
-                self.status = Some(("Copy artwork in SkyPDF first".into(), false));
+                self.status = Some(("Copy artwork in Ashina first".into(), false));
                 return;
             }
             self.paste_marks();

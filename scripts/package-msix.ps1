@@ -6,7 +6,7 @@ param(
     [string]$IdentityName,
     [string]$Publisher,
     [string]$PublisherDisplayName,
-    [string]$DisplayName = 'SkyPDF (formerly MyPDF)',
+    [string]$DisplayName = 'Ashina',
     [string]$PackageVersion,
     [string]$OutputDirectory = 'dist/msix',
     [switch]$SkipBuild
@@ -82,7 +82,7 @@ try {
     $out = [System.IO.Path]::GetFullPath($OutputDirectory)
     $null = New-Item -ItemType Directory -Path $out -Force
     $flavor = if ($TestIdentity) { 'TEST-ONLY' } else { 'store' }
-    $name = "SkyPDF-$PackageVersion-$flavor-x64.msix"
+    $name = "Ashina-$PackageVersion-$flavor-x64.msix"
     $package = Join-Path $out $name
     if (Test-Path $package) { throw "Output already exists: $package. Choose a new folder or version." }
     $work = Join-Path $out ('.work-' + [guid]::NewGuid().ToString('N'))

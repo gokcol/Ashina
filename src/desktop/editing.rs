@@ -6200,7 +6200,7 @@ mod tests {
         app.editor.mode = Mode::Sign;
         app.editor.signature_open = true;
         let bytes = clipboard::png(200, 80, &vec![128; 200 * 80 * 4]).unwrap();
-        // Exercise the real SkyPDF Copy -> clipboard image -> Signature path.
+        // Exercise the real Ashina Copy -> clipboard image -> Signature path.
         assert!(
             app.copy_artwork(
                 &ctx,
