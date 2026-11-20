@@ -3,7 +3,13 @@ use super::*;
 use mypdf_milestone0::pages::{self, Operation};
 use std::collections::BTreeSet;
 
-type Change = Result<(u64, u64, Vec<u8>, Option<Vec<usize>>), String>;
+type Change = Result<(u64, u64, Vec<u8>, PageSelection), String>;
+
+pub(super) enum PageSelection {
+    Reset,
+    Keep,
+    Reorder(Vec<usize>),
+}
 /// Weak source identities tie image remapping to the existing Undo/Redo history.
 pub(super) struct PageReorder {
     before: std::sync::Weak<[u8]>,
@@ -255,7 +261,7 @@ impl Organizer {
         let had_selection = !self.selected.is_empty();
         self.selected.retain(|page| *page < tab.pages.len());
         // A new document may first be shown before Loaded supplies its pages.
-        // Restore the current page once ready, and after deleting/rotating pages,
+        // Restore the current page once ready, and after deleting pages,
         // so sidebar actions have the same valid default target as Pages mode.
         // An intentionally empty drag selection remains empty until pages change.
         if self.selected.is_empty()
@@ -475,7 +481,7 @@ impl Viewer {
         for result in self.organizer.rx.try_iter() {
             self.organizer.busy = false;
             match result {
-                Ok((id, revision, bytes, order)) => {
+                Ok((id, revision, bytes, selection)) => {
                     let active = self.tabs.get(self.active).is_some_and(|t| t.id == id);
                     if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == id)
                         && let Some(s) = &mut tab.session
@@ -488,19 +494,21 @@ impl Viewer {
                         match s.commit_document(bytes) {
                             Ok(()) => {
                                 s.name_last_change(self.organizer.change_name);
-                                let reordered = order.is_some();
-                                if let Some(order) = order {
-                                    tab.page_reorders.push(PageReorder {
-                                        before,
-                                        after: Arc::downgrade(&s.source),
-                                        order,
-                                    });
+                                match selection {
+                                    PageSelection::Reorder(order) => {
+                                        tab.page_reorders.push(PageReorder {
+                                            before,
+                                            after: Arc::downgrade(&s.source),
+                                            order,
+                                        })
+                                    }
+                                    PageSelection::Reset if self.organizer.tab == id => {
+                                        self.organizer.selected.clear();
+                                    }
+                                    _ => {}
                                 }
                                 if active {
                                     self.editor.draft = None;
-                                }
-                                if self.organizer.tab == id && !reordered {
-                                    self.organizer.selected.clear();
                                 }
                                 self.status = Some((
                                     "Pages updated • Undo is available • Save to keep your changes"
@@ -638,11 +646,12 @@ impl Viewer {
                         mypdf_milestone0::annotations::export(&source, &annotations)?
                     };
                     let bytes = pages::apply(&current, &operation)?;
-                    let order = match operation {
-                        Operation::Reorder(order) => Some(order),
-                        _ => None,
+                    let selection = match operation {
+                        Operation::Reorder(order) => PageSelection::Reorder(order),
+                        Operation::Rotate { .. } => PageSelection::Keep,
+                        _ => PageSelection::Reset,
                     };
-                    Ok((id, revision, bytes, order))
+                    Ok((id, revision, bytes, selection))
                 }))
                 .map_err(|_| {
                     "This PDF could not be processed. Your document is unchanged.".to_string()
@@ -683,7 +692,20 @@ impl Viewer {
                     .inner_margin(egui::Margin::symmetric(14, 6)),
             )
             .show(ctx, |ui| {
+                // Keep the overflow scrollbar below the buttons, even on hover.
+                let panel_style = ui.style().clone();
+                let style = ui.style_mut();
+                style.spacing.scroll = egui::style::ScrollStyle {
+                    bar_width: 4.,
+                    foreground_color: true,
+                    ..egui::style::ScrollStyle::solid()
+                };
+                let thumb = theme::muted();
+                style.visuals.widgets.inactive.fg_stroke.color = thumb.gamma_multiply(0.55);
+                style.visuals.widgets.hovered.fg_stroke.color = thumb;
+                style.visuals.widgets.active.fg_stroke.color = thumb;
                 egui::ScrollArea::horizontal().show(ui, |ui| {
+                    ui.set_style(panel_style.clone());
                     ui.horizontal(|ui| {
                         if ui
                             .add_enabled(
@@ -744,6 +766,7 @@ impl Viewer {
                         }
                     })
                 });
+                ui.set_style(panel_style);
                 ui.horizontal_wrapped(|ui| {
                     ui.label(
                         RichText::new(format!(
@@ -1691,19 +1714,21 @@ mod tests {
         assert_eq!(app.tabs[0].page, 1);
         until(&mut app, &ready);
 
-        // A real content/geometry change must still invalidate the old images.
-        let session = app.tabs[0].session.as_mut().unwrap();
-        let rotated = pages::apply(
-            &session.source,
-            &Operation::Rotate {
-                pages: vec![0],
-                clockwise: true,
-            },
-        )
-        .unwrap();
-        session.commit_document(rotated).unwrap();
-        app.page_events(&ctx);
+        // Rotation rebuilds the thumbnails but keeps the current page and selection.
+        app.thumbnail_action(&ctx, ThumbnailAction::RotateRight);
+        assert!(app.organizer.busy);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while app.organizer.busy {
+            assert!(std::time::Instant::now() < deadline);
+            app.page_events(&ctx);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         assert!(app.tabs[0].rasters.is_empty());
+        until(&mut app, &ready);
+        assert_eq!(app.tabs[0].pages[1].width, sizes[0].height);
+        assert_eq!(app.tabs[0].page, 1);
+        assert_eq!(app.organizer.selected, BTreeSet::from([1, 2]));
+        assert_eq!(app.organizer.range, "2, 3");
     }
 
     #[test]
