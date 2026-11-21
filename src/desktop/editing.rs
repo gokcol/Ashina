@@ -2911,7 +2911,7 @@ impl Viewer {
             });
             let source = s.source.clone();
             if let Some((page, rect)) = focus
-                && tab.reorder_mapping(&source).is_none()
+                && !tab.is_page_reorder(&source)
             {
                 let page = page.min(tab.pages.len().saturating_sub(1));
                 tab.jump(page);

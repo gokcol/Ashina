@@ -258,9 +258,8 @@ impl Viewer {
             })
             .and_then(|r| r.map_err(|e| format!("{e:#}")));
             if let Some((id, revision)) = draft.target {
-                let _ = page_tx.send(
-                    result.map(|bytes| (id, revision, bytes, organize::PageSelection::Reset)),
-                );
+                let _ = page_tx
+                    .send(result.map(|bytes| (id, revision, bytes, organize::PageEffect::Reset)));
             } else if let Some(tx) = new_tx {
                 let name = draft
                     .paths

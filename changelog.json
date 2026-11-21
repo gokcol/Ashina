@@ -2,6 +2,14 @@
   "unreleased": [],
   "releases": [
     {
+      "version": "3.1.4",
+      "changes": [
+        "Rotating pages in Pages keeps the current page and selection in place, including through Undo and Redo.",
+        "Only rotated pages redraw, so the other thumbnails stay visible.",
+        "The Pages toolbar scrollbar sits below the buttons when they do not all fit."
+      ]
+    },
+    {
       "version": "3.1.3",
       "changes": [
         "The app is now named Ashina across the desktop interface, installers, release downloads and Microsoft Store listing.",

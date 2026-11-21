@@ -3,19 +3,40 @@ use super::*;
 use mypdf_milestone0::pages::{self, Operation};
 use std::collections::BTreeSet;
 
-type Change = Result<(u64, u64, Vec<u8>, PageSelection), String>;
+type Change = Result<(u64, u64, Vec<u8>, PageEffect), String>;
 
-pub(super) enum PageSelection {
+pub(super) enum PageEffect {
     Reset,
-    Keep,
+    /// New page index -> old page index.
     Reorder(Vec<usize>),
+    Rotate(BTreeSet<usize>),
 }
-/// Weak source identities tie image remapping to the existing Undo/Redo history.
-pub(super) struct PageReorder {
+
+/// Weak source identities keep cache reuse tied to an exact Undo/Redo step.
+pub(super) struct PageCacheChange {
     before: std::sync::Weak<[u8]>,
     after: std::sync::Weak<[u8]>,
-    /// New page index -> old page index.
-    order: Vec<usize>,
+    effect: PageEffect,
+}
+impl PageCacheChange {
+    fn between<'a>(
+        history: &'a [Self],
+        current: Option<&Arc<[u8]>>,
+        target: &Arc<[u8]>,
+    ) -> Option<(&'a PageEffect, bool)> {
+        let current = current?;
+        history.iter().find_map(|change| {
+            let before = change.before.upgrade()?;
+            let after = change.after.upgrade()?;
+            if Arc::ptr_eq(current, &before) && Arc::ptr_eq(target, &after) {
+                Some((&change.effect, true))
+            } else if Arc::ptr_eq(current, &after) && Arc::ptr_eq(target, &before) {
+                Some((&change.effect, false))
+            } else {
+                None
+            }
+        })
+    }
 }
 
 fn inverse_order(order: &[usize]) -> Vec<usize> {
@@ -358,33 +379,31 @@ impl Organizer {
     }
 }
 impl Tab {
-    /// Old page index -> new page index, only for a known pure reorder.
-    pub(super) fn reorder_mapping(&self, source: &Arc<[u8]>) -> Option<Vec<usize>> {
-        let current = self.bytes.as_ref()?;
-        self.page_reorders.iter().find_map(|change| {
-            let before = change.before.upgrade()?;
-            let after = change.after.upgrade()?;
-            if Arc::ptr_eq(current, &before) && Arc::ptr_eq(source, &after) {
-                Some(inverse_order(&change.order))
-            } else if Arc::ptr_eq(current, &after) && Arc::ptr_eq(source, &before) {
-                Some(change.order.clone())
-            } else {
-                None
-            }
-        })
+    pub(super) fn is_page_reorder(&self, source: &Arc<[u8]>) -> bool {
+        matches!(
+            PageCacheChange::between(&self.page_cache_changes, self.bytes.as_ref(), source),
+            Some((PageEffect::Reorder(_), _))
+        )
     }
 
     /// Rebuild rendering/search only when an undo or page edit changes the PDF source.
     pub(super) fn refresh_document(&mut self, ctx: &egui::Context) -> Option<Vec<usize>> {
         // Release weak allocations promptly when history trimming removes a
         // source, including frames where only annotations have changed.
-        self.page_reorders
+        self.page_cache_changes
             .retain(|change| change.before.strong_count() > 0 && change.after.strong_count() > 0);
         let source = self.session.as_ref().map(|s| s.source.clone())?;
         if self.bytes.as_ref().is_some_and(|b| Arc::ptr_eq(b, &source)) {
             return None;
         }
-        let mapping = self.reorder_mapping(&source);
+        let change =
+            PageCacheChange::between(&self.page_cache_changes, self.bytes.as_ref(), &source);
+        // Map old page indices to new ones along the current direction of history.
+        let mapping = match change {
+            Some((PageEffect::Reorder(order), true)) => Some(inverse_order(order)),
+            Some((PageEffect::Reorder(order), false)) => Some(order.clone()),
+            _ => None,
+        };
         let wake = ctx.clone();
         self.worker = Worker::from_bytes(source.clone(), move || wake.request_repaint());
         self.bytes = Some(source);
@@ -419,18 +438,21 @@ impl Tab {
                 }
             }
             self.document_layout = None;
-        } else if keep_stale {
-            for (key, raster) in self.rasters.drain() {
-                let sharper = self
-                    .stale
-                    .get(&key.page)
-                    .is_none_or(|old| old.texture.size()[0] < raster.texture.size()[0]);
-                if !key.thumbnail && sharper {
-                    self.stale.insert(key.page, raster);
+        } else if let Some((PageEffect::Rotate(pages), _)) = change {
+            self.rasters.retain(|key, _| !pages.contains(&key.page));
+            self.stale.retain(|page, _| !pages.contains(page));
+        } else {
+            if keep_stale {
+                for (key, raster) in self.rasters.drain() {
+                    let sharper = self
+                        .stale
+                        .get(&key.page)
+                        .is_none_or(|old| old.texture.size()[0] < raster.texture.size()[0]);
+                    if !key.thumbnail && sharper {
+                        self.stale.insert(key.page, raster);
+                    }
                 }
             }
-        }
-        if mapping.is_none() {
             self.rasters.clear();
         }
         self.pending.clear();
@@ -481,7 +503,7 @@ impl Viewer {
         for result in self.organizer.rx.try_iter() {
             self.organizer.busy = false;
             match result {
-                Ok((id, revision, bytes, selection)) => {
+                Ok((id, revision, bytes, effect)) => {
                     let active = self.tabs.get(self.active).is_some_and(|t| t.id == id);
                     if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == id)
                         && let Some(s) = &mut tab.session
@@ -494,18 +516,22 @@ impl Viewer {
                         match s.commit_document(bytes) {
                             Ok(()) => {
                                 s.name_last_change(self.organizer.change_name);
-                                match selection {
-                                    PageSelection::Reorder(order) => {
-                                        tab.page_reorders.push(PageReorder {
+                                match effect {
+                                    PageEffect::Reset => {
+                                        if self.organizer.tab == id {
+                                            self.organizer.selected.clear();
+                                        }
+                                    }
+                                    effect => {
+                                        if matches!(effect, PageEffect::Rotate(_)) {
+                                            s.clear_change_focus();
+                                        }
+                                        tab.page_cache_changes.push(PageCacheChange {
                                             before,
                                             after: Arc::downgrade(&s.source),
-                                            order,
-                                        })
+                                            effect,
+                                        });
                                     }
-                                    PageSelection::Reset if self.organizer.tab == id => {
-                                        self.organizer.selected.clear();
-                                    }
-                                    _ => {}
                                 }
                                 if active {
                                     self.editor.draft = None;
@@ -646,12 +672,14 @@ impl Viewer {
                         mypdf_milestone0::annotations::export(&source, &annotations)?
                     };
                     let bytes = pages::apply(&current, &operation)?;
-                    let selection = match operation {
-                        Operation::Reorder(order) => PageSelection::Reorder(order),
-                        Operation::Rotate { .. } => PageSelection::Keep,
-                        _ => PageSelection::Reset,
+                    let effect = match operation {
+                        Operation::Reorder(order) => PageEffect::Reorder(order),
+                        Operation::Rotate { pages, .. } => {
+                            PageEffect::Rotate(pages.into_iter().collect())
+                        }
+                        _ => PageEffect::Reset,
                     };
-                    Ok((id, revision, bytes, selection))
+                    Ok((id, revision, bytes, effect))
                 }))
                 .map_err(|_| {
                     "This PDF could not be processed. Your document is unchanged.".to_string()
@@ -1602,7 +1630,7 @@ mod tests {
     use mypdf_milestone0::annotations::{Annotation, Kind, Style};
 
     #[test]
-    fn reordering_pages_keeps_rendered_images_selection_and_undo_redo_without_blank_frames() {
+    fn page_reorder_and_rotation_keep_unaffected_images_through_undo_and_redo() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("Reorder.pdf");
         let font = mypdf_milestone0::document::default_font().unwrap();
@@ -1645,8 +1673,11 @@ mod tests {
             ready(a) && a.tabs[0].rasters.keys().filter(|k| k.thumbnail).count() == 3
         });
         let full = viewer::raster_key(0, app.tabs[0].pages[0], 1., false);
+        let other_full = viewer::raster_key(2, app.tabs[0].pages[2], 1., false);
         app.tabs[0].request(full);
+        app.tabs[0].request(other_full);
         until(&mut app, &|a| a.tabs[0].rasters.contains_key(&full));
+        until(&mut app, &|a| a.tabs[0].rasters.contains_key(&other_full));
         let original: HashMap<_, _> = app.tabs[0]
             .rasters
             .iter()
@@ -1714,7 +1745,32 @@ mod tests {
         assert_eq!(app.tabs[0].page, 1);
         until(&mut app, &ready);
 
-        // Rotation rebuilds the thumbnails but keeps the current page and selection.
+        // Rotating pages 2 and 3 invalidates their images only. Page 1 must keep
+        // both texture handles, even before the replacement worker sends Loaded.
+        let untouched: Vec<_> = app.tabs[0]
+            .rasters
+            .iter()
+            .filter(|(key, _)| key.page == 0)
+            .map(|(key, raster)| (*key, raster.texture.id()))
+            .collect();
+        assert_eq!(untouched.len(), 2);
+        let assert_untouched = |app: &Viewer| {
+            for (key, texture) in &untouched {
+                assert_eq!(app.tabs[0].rasters[key].texture.id(), *texture);
+            }
+            assert_eq!(app.tabs[0].page, 1);
+            assert_eq!(app.organizer.selected, BTreeSet::from([1, 2]));
+            assert_eq!(app.organizer.range, "2, 3");
+        };
+        let rotated_ready = |app: &Viewer| {
+            ready(app)
+                && [1, 2].into_iter().all(|page| {
+                    app.tabs[0]
+                        .rasters
+                        .keys()
+                        .any(|k| k.page == page && k.thumbnail)
+                })
+        };
         app.thumbnail_action(&ctx, ThumbnailAction::RotateRight);
         assert!(app.organizer.busy);
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
@@ -1723,12 +1779,21 @@ mod tests {
             app.page_events(&ctx);
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
-        assert!(app.tabs[0].rasters.is_empty());
-        until(&mut app, &ready);
+        assert_eq!(app.tabs[0].rasters.len(), untouched.len());
+        assert_untouched(&app);
+        until(&mut app, &rotated_ready);
         assert_eq!(app.tabs[0].pages[1].width, sizes[0].height);
-        assert_eq!(app.tabs[0].page, 1);
-        assert_eq!(app.organizer.selected, BTreeSet::from([1, 2]));
-        assert_eq!(app.organizer.range, "2, 3");
+        assert_untouched(&app);
+
+        for (redo, width) in [(false, sizes[0].width), (true, sizes[0].height)] {
+            app.editor_undo(redo);
+            app.page_events(&ctx);
+            assert_eq!(app.tabs[0].rasters.len(), untouched.len());
+            assert_untouched(&app);
+            until(&mut app, &rotated_ready);
+            assert_eq!(app.tabs[0].pages[1].width, width);
+            assert_untouched(&app);
+        }
     }
 
     #[test]

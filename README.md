@@ -2,15 +2,15 @@
 
 # Ashina — native Rust desktop PDF editor
 
-**Ashina is the new name for this PDF editor, previously named MyPDF and SkyPDF.** Version **3.1.3**, Mac build **246**, uses Ashina throughout the app, installers and Store listing. Existing settings, libraries, signatures, PDF objects and `.mypdf-review` files continue to work. The GitHub repository URL and application identities remain stable so existing update checks and links keep working.
+**Ashina is the new name for this PDF editor, previously named MyPDF and SkyPDF.** Version **3.1.4**, Mac build **247**, keeps page selection during rotation and redraws only the thumbnails of the pages you rotate. The Pages toolbar scrollbar now sits below its buttons. Existing settings, libraries, signatures, PDF objects and `.mypdf-review` files continue to work. The GitHub repository URL and application identities remain stable so existing update checks and links keep working.
 
-[Ashina 3.1.3 downloads](https://github.com/gokcol/MyPDF/releases/tag/v3.1.3) · [Feature guide](FEATURES.md)
+[Ashina 3.1.4 downloads](https://github.com/gokcol/MyPDF/releases/tag/v3.1.4) · [Feature guide](FEATURES.md)
 
 Version **3.1.1**, Mac build **244**, is [available for macOS and Windows](https://github.com/gokcol/MyPDF/releases/tag/v3.1.1). It adds threaded review comments, voice notes, revision tools, sharing cleanup and smoother editing, with fixes that keep the note inspector open and position popovers beside their markers. See the [complete feature guide](FEATURES.md) for workflows, platform support and compatibility limits; the guide is also attached to the release. The 3.1 line now enters a feature freeze focused on reliability and performance.
 
 Version **3.1.0**, Mac build **235**, adds reliable annotation manipulation, font controls for annotation text, and a visual stamp designer with border templates, colors and transparency. It includes configurable touch controls, customizable Home, polished Settings and About, A4 page sizing, image fitting, OCR, table editing, metadata and saving improvements. [Downloads and full release notes](https://github.com/gokcol/MyPDF/releases/tag/v3.1.0).
 
-[Ashina on Microsoft Store](https://apps.microsoft.com/detail/9MXR0WLW42XT) uses the same Store product previously listed as MyPDF (OG). Version **3.1.3.0** was resubmitted on **November 17, 2026** with the reserved name **Ashina**, updated listing text and refreshed screenshots, addressing the previous naming rejection. Partner Center reports **Update in certification**. The previously approved version remains live until Microsoft approves and publishes the update.
+[Ashina on Microsoft Store](https://apps.microsoft.com/detail/9MXR0WLW42XT) uses the same Store product previously listed as MyPDF (OG). Microsoft published version **3.1.3.0** under the name **Ashina**. The **3.1.4.0** Store update is being prepared.
 
 Version **2.4.2**, Mac build **212**, fixes Save and autosave rejecting text boxes that look correct on screen. PDF annotation text now uses the editor’s layout engine and preserves visible overflow without shrinking text. Includes the file insertion and image editing improvements from 2.4.1. [Downloads](https://github.com/gokcol/MyPDF/releases/tag/v2.4.2).
 
@@ -52,10 +52,10 @@ Choose **File → Document Properties…** on Mac or Windows (also available thr
 
 ## Choose a Windows download
 
-The [GitHub release](https://github.com/gokcol/MyPDF/releases/tag/v3.1.3) includes two Windows architectures:
+The [GitHub release](https://github.com/gokcol/MyPDF/releases/tag/v3.1.4) includes two Windows architectures:
 
-- **ARM64:** `Ashina-3.1.3-Setup-arm64.exe` or `Ashina-3.1.3-windows-arm64.zip`, for Windows on ARM and Parallels on Apple Silicon.
-- **x64:** `Ashina-3.1.3-Setup.exe` or `Ashina-3.1.3-windows-x64.zip`, for Intel/AMD PCs.
+- **ARM64:** `Ashina-3.1.4-Setup-arm64.exe` or `Ashina-3.1.4-windows-arm64.zip`, for Windows on ARM and Parallels on Apple Silicon.
+- **x64:** `Ashina-3.1.4-Setup.exe` or `Ashina-3.1.4-windows-x64.zip`, for Intel/AMD PCs.
 
 Both include native offline OCR and translation runtimes. The ARM64 app avoids x64 CPU emulation, but its DirectX 12 renderer still depends on compatible graphics support; Parallels performance needs separate measurement. Microsoft Store packaging currently remains x64. See [Windows ARM64 build and validation](docs/windows-arm64.md).
 

@@ -1,7 +1,5 @@
-Ashina 3.1.3
+Ashina 3.1.4
 
-• The app is now named Ashina across the desktop interface, installers, release downloads and Microsoft Store listing.
-• Existing installations receive this as an update. Settings, artwork, signatures, review files and editable PDF objects remain compatible.
-• Mac updates use the existing trusted signing key and a verified signed feed, with download, install and relaunch support.
-• Windows downloads include native x64 and ARM64 builds with offline English, Turkish and German OCR.
-• Continues the 3.1 feature freeze, focused on reliability and performance.
+• Rotating pages in Pages keeps the current page and selection in place, including through Undo and Redo.
+• Only rotated pages redraw, so the other thumbnails stay visible.
+• The Pages toolbar scrollbar sits below the buttons when they do not all fit.
