@@ -1,5 +1,3 @@
-Ashina was previously named MyPDF and SkyPDF. Existing settings and documents remain available.
-
 Ashina - a PDF editor for reading, annotating, editing, filling forms,
 comparing versions and signing.
 
@@ -17,7 +15,7 @@ What the installer changes:
   files. Your default PDF app stays the same.
 - You can remove Ashina at any time in Settings > Apps; that also removes
   the "Open with" entry. Your saved signatures and details are kept in
-  %LOCALAPPDATA%\MyPDF.
+  your user profile.
 
 Ashina is licensed under MIT OR Apache-2.0. Source code:
 https://github.com/gokcol/MyPDF

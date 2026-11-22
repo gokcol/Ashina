@@ -5,7 +5,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 if [ "$(uname -s)" != Darwin ]; then
-    echo "This script packages a macOS app. Build the mypdf binary directly on Windows." >&2
+    echo "This script packages a macOS app. Build the ashina binary directly on Windows." >&2
     exit 1
 fi
 profile=release
@@ -42,10 +42,10 @@ set -- build --locked
 binary_dir=$target_dir/${target:+$target/}$profile
 if [ -z "$target" ] || [ "$target" = "$host" ]; then
     # Build the app and runnable icon helper together on the release host.
-    cargo "$@" --bin mypdf --example app_icon
+    cargo "$@" --bin ashina --example app_icon
     icon_tool=$binary_dir/examples/app_icon
 else
-    cargo "$@" --bin mypdf
+    cargo "$@" --bin ashina
     # Cross-compiled executables cannot run on an Intel packaging host.
     set -- build --locked --target "$host" --example app_icon
     [ "$profile" = debug ] || set -- "$@" --release
@@ -76,7 +76,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 app=$work/Ashina.app
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-cp "$binary_dir/mypdf" "$app/Contents/MacOS/MyPDF"
+cp "$binary_dir/ashina" "$app/Contents/MacOS/Ashina"
 cp packaging/Info.plist "$app/Contents/Info.plist"
 if [ "$document_handlers" = false ]; then
     # Change only the fresh bundle, before codesign. Signed release bundles and

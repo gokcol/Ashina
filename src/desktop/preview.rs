@@ -1,5 +1,5 @@
 //! Manual visual QA of the actual egui layout, without a window server.
-//! Run with MYPDF_PREVIEW_DIR and `cargo test --bin mypdf native_visual_preview -- --ignored`.
+//! Run with MYPDF_PREVIEW_DIR and `cargo test --bin ashina native_visual_preview -- --ignored`.
 use super::*;
 use eframe::App;
 

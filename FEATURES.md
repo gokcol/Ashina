@@ -2,7 +2,7 @@
 
 Previously named **MyPDF** and **SkyPDF**. The Store listing uses **Ashina**; existing documents, settings and review exchange files remain compatible.
 
-**Release: 3.1.4** · macOS (Apple Silicon) and Windows (x64 and ARM64)
+**Release: 3.1.5** · macOS (Apple Silicon) and Windows (x64 and ARM64)
 
 Ashina is a native desktop PDF editor for local documents. Its main workspaces are **Read, Annotate, Edit, Draw, Forms, Sign, Pages and Export**. Contextual controls appear in the right panel; tool variations share compact menus that open on hover, click or tap.
 

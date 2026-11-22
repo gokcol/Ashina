@@ -48,7 +48,7 @@ The output is `dist/translation/windows-x64/`: one `mypdf_ct2.dll`, its checksum
 and license notices. CTranslate2, SentencePiece, and the CPU RUY backend are
 statically linked, including the MSVC runtime. CUDA, MKL, oneDNN and Python are
 not required. Include the entire output in a `translation/` folder beside
-`MyPDF.exe`; ZIP, Inno Setup and MSIX packaging all validate this runtime.
+`Ashina.exe`; ZIP, Inno Setup and MSIX packaging all validate this runtime.
 
 Upstream source commits are pinned in `CMakeLists.txt`:
 

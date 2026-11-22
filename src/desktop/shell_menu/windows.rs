@@ -61,7 +61,7 @@ impl LaunchTarget {
                     if let Some(local) = std::env::var_os("LOCALAPPDATA") {
                         target.executable = HSTRING::from(
                             PathBuf::from(local)
-                                .join("Microsoft/WindowsApps/mypdf-og.exe")
+                                .join("Microsoft/WindowsApps/ashina.exe")
                                 .as_os_str(),
                         );
                     }

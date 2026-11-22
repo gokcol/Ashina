@@ -1,13 +1,13 @@
 [package]
 name = "mypdf-milestone0"
-version = "3.1.4"
+version = "3.1.5"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-default-run = "mypdf"
+default-run = "ashina"
 
 [[bin]]
-name = "mypdf"
-path = "src/bin/mypdf.rs"
+name = "ashina"
+path = "src/bin/ashina.rs"
 
 [[bin]]
 name = "mypdf-milestone0"

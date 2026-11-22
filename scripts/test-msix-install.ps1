@@ -47,11 +47,20 @@ try {
     $installed = Get-AppxPackage -Name $identity
     if (-not $installed -or $installed.Version -ne $info.version) { throw 'Installed package/version not found.' }
     $manifest = Get-AppxPackageManifest -Package $installed.PackageFullName
-    $alias = $manifest.SelectSingleNode("//*[local-name()='ExecutionAlias' and @Alias='mypdf-og.exe']")
-    if (-not $alias) { throw 'Missing stable Jump List execution alias.' }
-    if (-not (Test-Path (Join-Path $env:LOCALAPPDATA 'Microsoft/WindowsApps/mypdf-og.exe'))) { throw 'Jump List execution alias was not registered.' }
-    if ($manifest.Package.Applications.Application.Id -ne 'MyPDF') { throw 'Missing desktop application registration.' }
-    if (-not (Test-Path (Join-Path $installed.InstallLocation 'MyPDF.exe'))) { throw 'Packaged executable missing.' }
+    $app = $manifest.Package.Applications.Application
+    if ($app.Id -cne 'MyPDF' -or $app.Executable -cne 'Ashina.exe') {
+        throw 'The packaged app must keep its application ID and launch Ashina.exe.'
+    }
+    $aliases = $manifest.SelectSingleNode("//*[local-name()='Extension' and @Category='windows.appExecutionAlias']")
+    if (-not $aliases -or $aliases.Executable -cne 'Ashina.exe') { throw 'Execution aliases must launch Ashina.exe.' }
+    foreach ($name in @('ashina.exe', 'mypdf-og.exe')) {
+        if (-not $aliases.SelectSingleNode(".//*[local-name()='ExecutionAlias' and @Alias='$name']") -or
+            -not (Test-Path (Join-Path $env:LOCALAPPDATA "Microsoft/WindowsApps/$name"))) {
+            throw "Missing execution alias $name."
+        }
+    }
+    if (-not (Test-Path (Join-Path $installed.InstallLocation 'Ashina.exe')) -or
+        (Test-Path (Join-Path $installed.InstallLocation 'MyPDF.exe'))) { throw 'Incorrect packaged executable name.' }
     # Exercise WindowsApps code with the installed app's package identity;
     # an unrelated PowerShell host may lack permission to map the DLL for execution.
     $runtimeResult = Join-Path $scratch 'runtime-result.json'

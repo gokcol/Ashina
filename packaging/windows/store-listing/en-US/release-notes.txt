@@ -1,5 +1,4 @@
-Ashina 3.1.4
+Ashina 3.1.5
 
-• Rotating pages in Pages keeps the current page and selection in place, including through Undo and Redo.
-• Only rotated pages redraw, so the other thumbnails stay visible.
-• The Pages toolbar scrollbar sits below the buttons when they do not all fit.
+• The Windows process now appears as Ashina.exe in Task Manager.
+• Updating keeps existing app settings and PDF associations.

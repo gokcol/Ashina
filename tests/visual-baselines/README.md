@@ -12,7 +12,7 @@ MYPDF_PREVIEW_DIR="$PWD/artifacts/visual-check/light" \
 MYPDF_PREVIEW_THEME=light \
 MYPDF_PREVIEW_ONLY=ContextDrawing \
 MYPDF_PREVIEW_BASELINE="$PWD/tests/visual-baselines/light" \
-cargo test --locked --bin mypdf native_visual_preview -- --ignored --nocapture
+cargo test --locked --bin ashina native_visual_preview -- --ignored --nocapture
 ```
 
 The check compares decoded pixels; it tolerates small rasterization differences and fails if more than 0.5% of pixels differ by over 16 channel values. Fonts and OS rendering can affect results. Inspect any mismatch before deciding whether it is a regression or an intentional platform/layout change. Baselines must never be updated automatically merely to make a failing test pass.

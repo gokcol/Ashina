@@ -1,4 +1,4 @@
-# Run on Windows after building mypdf.exe and msix_assets.exe. Checks input
+# Run on Windows after building ashina.exe and msix_assets.exe. Checks input
 # boundaries and XML escaping with the real SDK, without publishing anything.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest

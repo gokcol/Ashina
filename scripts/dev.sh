@@ -49,7 +49,7 @@ if [ -n "$preview" ]; then
         export MYPDF_PREVIEW_ONLY="$preview"
     fi
     MYPDF_PREVIEW_DIR="$out" cargo test --manifest-path "$root/Cargo.toml" --locked \
-        --bin mypdf native_visual_preview -- --ignored
+        --bin ashina native_visual_preview -- --ignored
     echo "Screenshots: $out"
     exit 0
 fi
@@ -60,4 +60,4 @@ if [ -n "$data_dir" ]; then
     echo "Profile: $data_dir"
 fi
 # $release is intentionally unquoted so an empty value adds no argument.
-exec cargo run --manifest-path "$root/Cargo.toml" --locked $release --bin mypdf -- "$@"
+exec cargo run --manifest-path "$root/Cargo.toml" --locked $release --bin ashina -- "$@"

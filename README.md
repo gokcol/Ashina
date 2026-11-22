@@ -2,15 +2,15 @@
 
 # Ashina — native Rust desktop PDF editor
 
-**Ashina is the new name for this PDF editor, previously named MyPDF and SkyPDF.** Version **3.1.4**, Mac build **247**, keeps page selection during rotation and redraws only the thumbnails of the pages you rotate. The Pages toolbar scrollbar now sits below its buttons. Existing settings, libraries, signatures, PDF objects and `.mypdf-review` files continue to work. The GitHub repository URL and application identities remain stable so existing update checks and links keep working.
+**Ashina** is a native PDF reader and editor for macOS and Windows. Version **3.1.5**, Mac build **248**, uses Ashina as the process name on both platforms. Existing settings, signatures, PDF associations and update links carry over.
 
-[Ashina 3.1.4 downloads](https://github.com/gokcol/MyPDF/releases/tag/v3.1.4) · [Feature guide](FEATURES.md)
+[Ashina 3.1.5 downloads](https://github.com/gokcol/MyPDF/releases/tag/v3.1.5) · [Feature guide](FEATURES.md)
 
 Version **3.1.1**, Mac build **244**, is [available for macOS and Windows](https://github.com/gokcol/MyPDF/releases/tag/v3.1.1). It adds threaded review comments, voice notes, revision tools, sharing cleanup and smoother editing, with fixes that keep the note inspector open and position popovers beside their markers. See the [complete feature guide](FEATURES.md) for workflows, platform support and compatibility limits; the guide is also attached to the release. The 3.1 line now enters a feature freeze focused on reliability and performance.
 
 Version **3.1.0**, Mac build **235**, adds reliable annotation manipulation, font controls for annotation text, and a visual stamp designer with border templates, colors and transparency. It includes configurable touch controls, customizable Home, polished Settings and About, A4 page sizing, image fitting, OCR, table editing, metadata and saving improvements. [Downloads and full release notes](https://github.com/gokcol/MyPDF/releases/tag/v3.1.0).
 
-[Ashina on Microsoft Store](https://apps.microsoft.com/detail/9MXR0WLW42XT) uses the same Store product previously listed as MyPDF (OG). Microsoft published version **3.1.3.0** under the name **Ashina**. Update **3.1.4.0** was submitted on November 21, 2026. Partner Center shows **Update in certification**, with automatic publishing after approval.
+[Ashina on Microsoft Store](https://apps.microsoft.com/detail/9MXR0WLW42XT) uses the existing Store product. Update **3.1.5.0** is being prepared for certification.
 
 Version **2.4.2**, Mac build **212**, fixes Save and autosave rejecting text boxes that look correct on screen. PDF annotation text now uses the editor’s layout engine and preserves visible overflow without shrinking text. Includes the file insertion and image editing improvements from 2.4.1. [Downloads](https://github.com/gokcol/MyPDF/releases/tag/v2.4.2).
 
@@ -52,10 +52,10 @@ Choose **File → Document Properties…** on Mac or Windows (also available thr
 
 ## Choose a Windows download
 
-The [GitHub release](https://github.com/gokcol/MyPDF/releases/tag/v3.1.4) includes two Windows architectures:
+The [GitHub release](https://github.com/gokcol/MyPDF/releases/tag/v3.1.5) includes two Windows architectures:
 
-- **ARM64:** `Ashina-3.1.4-Setup-arm64.exe` or `Ashina-3.1.4-windows-arm64.zip`, for Windows on ARM and Parallels on Apple Silicon.
-- **x64:** `Ashina-3.1.4-Setup.exe` or `Ashina-3.1.4-windows-x64.zip`, for Intel/AMD PCs.
+- **ARM64:** `Ashina-3.1.5-Setup-arm64.exe` or `Ashina-3.1.5-windows-arm64.zip`, for Windows on ARM and Parallels on Apple Silicon.
+- **x64:** `Ashina-3.1.5-Setup.exe` or `Ashina-3.1.5-windows-x64.zip`, for Intel/AMD PCs.
 
 Both include native offline OCR and translation runtimes. The ARM64 app avoids x64 CPU emulation, but its DirectX 12 renderer still depends on compatible graphics support; Parallels performance needs separate measurement. Microsoft Store packaging currently remains x64. See [Windows ARM64 build and validation](docs/windows-arm64.md).
 
@@ -194,9 +194,9 @@ sh scripts/dev.sh --release ~/Documents/report.pdf
 # Headless UI screenshots into target/ui-preview:
 sh scripts/dev.sh --preview=Home,Confirmation
 
-cargo run --locked --bin mypdf
+cargo run --locked --bin ashina
 # Optional PDF paths at launch:
-cargo run --locked --bin mypdf -- /path/to/first.pdf /path/to/second.pdf
+cargo run --locked --bin ashina -- /path/to/first.pdf /path/to/second.pdf
 
 # Create a locally ad-hoc-signed Mac app bundle:
 sh scripts/bundle-macos.sh
@@ -204,7 +204,7 @@ sh scripts/bundle-macos.sh
 sh scripts/bundle-macos.sh --debug
 ```
 
-The Mac bundle is `dist/Ashina.app`. The bundle script itself installs nothing. Regular bundles declare that they open PDFs with the *Alternate* rank, so once copied to Applications, Ashina appears in Finder's **Open With** menu while the default PDF app stays the same. Use `sh scripts/bundle-macos.sh --review --output "dist/Ashina Review.app"` for test bundles: `--review` (also `--no-document-handlers`), `--debug`, and output names ending in `Review.app` omit document handlers before signing, keeping test apps out of Open With. Release and rollback bundles retain their original metadata. `scripts/release-macos.sh` makes the release: it builds for Apple Silicon, signs with a Developer ID, notarizes and staples the app, and wraps it in a signed, notarized DMG (its header says which settings it needs). On Windows, GitHub Actions lints and tests Ashina on every push (platform-specific OCR and certificate-store tests cover their native backends; native print tests cover both platforms), and the hand-run **Windows build** workflow builds `MyPDF.exe` (with its icon and version details), packs it into `Ashina-<version>-windows-x64.zip`, builds the `Ashina-<version>-Setup.exe` installer with Inno Setup (`packaging/windows/MyPDF.iss`), and can attach both to a release. The installer needs no administrator rights: it installs for the current user (or for everyone, if chosen), adds a Start menu entry and an uninstaller, and, when its "Open with" option is ticked, lists Ashina in the Open With menu for PDF files; uninstalling removes that entry again. The Windows app is not yet code-signed, so Windows SmartScreen asks before the first launch; the 0.95.1 app and installer (install, Start menu, Open With, uninstall) have been tried by hand on Windows 11 in Parallels Desktop and work.
+The Mac bundle is `dist/Ashina.app`. The bundle script itself installs nothing. Regular bundles declare that they open PDFs with the *Alternate* rank, so once copied to Applications, Ashina appears in Finder's **Open With** menu while the default PDF app stays the same. Use `sh scripts/bundle-macos.sh --review --output "dist/Ashina Review.app"` for test bundles: `--review` (also `--no-document-handlers`), `--debug`, and output names ending in `Review.app` omit document handlers before signing, keeping test apps out of Open With. Release and rollback bundles retain their original metadata. `scripts/release-macos.sh` makes the release: it builds for Apple Silicon, signs with a Developer ID, notarizes and staples the app, and wraps it in a signed, notarized DMG (its header says which settings it needs). On Windows, GitHub Actions lints and tests Ashina on every push (platform-specific OCR and certificate-store tests cover their native backends; native print tests cover both platforms), and the hand-run **Windows build** workflow builds `Ashina.exe` (with its icon and version details), packs it into `Ashina-<version>-windows-x64.zip`, builds the `Ashina-<version>-Setup.exe` installer with Inno Setup (`packaging/windows/MyPDF.iss`), and can attach both to a release. The installer needs no administrator rights: it installs for the current user (or for everyone, if chosen), adds a Start menu entry and an uninstaller, and, when its "Open with" option is ticked, lists Ashina in the Open With menu for PDF files; uninstalling removes that entry again. The Windows app is not yet code-signed, so Windows SmartScreen asks before the first launch; the 0.95.1 app and installer (install, Start menu, Open With, uninstall) have been tried by hand on Windows 11 in Parallels Desktop and work.
 
 To tidy stale Mac **Open With** entries, preview `python3 scripts/clean-macos-open-with.py`, then add `--apply`. It unregisters noninstalled Ashina copies and keeps `/Applications/Ashina.app` registered. App bundles, signed backups, other applications and user data remain intact. For durable cleanup, `--apply --archive` verifies ZIP backups of obsolete managed builds, then retains their original bytes in inert folders with `ArchivedContents` instead of `Contents`; each manifest records both restore methods and any ZIP omission of the OS-managed root access attribute, with the retained folder providing all original metadata. Running apps, tracked source, unexpected files and other applications are protected.
 

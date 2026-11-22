@@ -65,12 +65,17 @@ try {
     if (-not $SkipBuild) {
         & (Join-Path $PSScriptRoot 'build-translation-windows.ps1')
         & (Join-Path $PSScriptRoot 'build-ocr-windows.ps1')
-        & cargo build --locked --release --bin mypdf --example msix_assets
+        & cargo build --locked --release --bin ashina --example msix_assets
         if ($LASTEXITCODE -ne 0) { throw 'Rust release build failed.' }
     }
-    $exe = Join-Path $repo 'target/release/mypdf.exe'
+    $exe = Join-Path $repo 'target/release/ashina.exe'
     $assetsTool = Join-Path $repo 'target/release/examples/msix_assets.exe'
-    if (-not (Test-Path $exe) -or -not (Test-Path $assetsTool)) { throw 'Build mypdf and the msix_assets example first.' }
+    if (-not (Test-Path $exe) -or -not (Test-Path $assetsTool)) { throw 'Build ashina and the msix_assets example first.' }
+    $versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($exe)
+    if ($versionInfo.OriginalFilename -cne 'Ashina.exe' -or $versionInfo.InternalName -cne 'Ashina' -or
+        $versionInfo.FileDescription -cne 'Ashina' -or $versionInfo.ProductName -cne 'Ashina') {
+        throw 'The Windows executable must carry Ashina file and process metadata.'
+    }
     $reader = [System.IO.BinaryReader]::new([System.IO.File]::OpenRead($exe))
     try {
         if ($reader.ReadUInt16() -ne 0x5a4d) { throw 'Not a Windows executable.' }
@@ -89,7 +94,7 @@ try {
     $layout = Join-Path $work 'layout'
     $null = New-Item -ItemType Directory -Path $layout -Force
     try {
-        Copy-Item $exe (Join-Path $layout 'MyPDF.exe')
+        Copy-Item $exe (Join-Path $layout 'Ashina.exe')
         Copy-Item -Path @('README.md', 'LICENSE-MIT', 'LICENSE-APACHE', 'THIRD_PARTY_NOTICES.md') -Destination $layout
         & (Join-Path $PSScriptRoot 'copy-translation-runtime.ps1') -DestinationDirectory $layout
         & (Join-Path $PSScriptRoot 'copy-ocr-runtime.ps1') -DestinationDirectory $layout
@@ -114,7 +119,7 @@ try {
         $unpacked = Join-Path $work 'unpacked'
         & $makeappx unpack /p $package /d $unpacked /o
         if ($LASTEXITCODE -ne 0) { throw 'MSIX round-trip validation failed.' }
-        if ((Get-FileHash $exe).Hash -ne (Get-FileHash (Join-Path $unpacked 'MyPDF.exe')).Hash) {
+        if ((Get-FileHash $exe).Hash -ne (Get-FileHash (Join-Path $unpacked 'Ashina.exe')).Hash) {
             throw 'Packaged executable differs from the release build.'
         }
         $runtime = Join-Path $layout 'translation'
@@ -127,6 +132,9 @@ try {
             }
         }
         [xml]$roundTrip = Get-Content (Join-Path $unpacked 'AppxManifest.xml') -Raw
+        if ($roundTrip.Package.Applications.Application.Executable -cne 'Ashina.exe') {
+            throw 'The package must launch Ashina.exe.'
+        }
         if ($roundTrip.Package.Identity.Name -ne $IdentityName -or $roundTrip.Package.Identity.Publisher -ne $Publisher -or
             $roundTrip.Package.Identity.Version -ne $PackageVersion) { throw 'Packaged identity does not match the requested identity.' }
         $roundTripVisual = $roundTrip.GetElementsByTagName('VisualElements', 'http://schemas.microsoft.com/appx/manifest/uap/windows10')[0]

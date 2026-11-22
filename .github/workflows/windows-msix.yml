@@ -87,7 +87,7 @@ jobs:
           & ./scripts/test-translation-runtime.ps1
           & ./scripts/test-translation-packaging.ps1
       - name: Build desktop app and Store artwork
-        run: cargo build --locked --release --bin mypdf --example msix_assets --example ocr_smoke
+        run: cargo build --locked --release --bin ashina --example msix_assets --example ocr_smoke
       - name: Verify real offline OCR on a scanned PDF
         shell: pwsh
         run: |

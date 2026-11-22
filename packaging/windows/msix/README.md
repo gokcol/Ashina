@@ -62,7 +62,7 @@ round trip. Outputs in `dist/msix` are the `.msix`, SHA-256 sidecar, and JSON bu
 metadata (identity, public `appVersion`, internal package `version`, source commit
 and Windows SDK version). An existing
 package is never overwritten. `-SkipBuild` is available when both binaries have
-already been built with `cargo build --locked --release --bin mypdf --example msix_assets`.
+already been built with `cargo build --locked --release --bin ashina --example msix_assets`.
 
 CI also checks missing/placeholder identities, invalid versions, XML escaping,
 and output collisions. For test builds it signs a **temporary copy** with a one-day
@@ -73,7 +73,7 @@ manual packaged-app review or Microsoft certification.
 
 ## Settings, stamps, and capability declarations
 
-MyPDF uses the default MSIX AppData and registry virtualization. It no longer
+Ashina uses the default MSIX AppData and registry virtualization. It no longer
 requests `unvirtualizedResources` or disables filesystem virtualization; this
 addresses the November 2026 certification rejection under policy 10.6.3.
 New settings, stamps, certificate references, recovery files and the file-open
@@ -119,4 +119,4 @@ configured and certification succeeds, this is packaging support, not a Store re
 - [Accepted submission formats](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/upload-app-packages)
 - [Store signing and developer account requirements](https://learn.microsoft.com/en-us/windows/apps/publish/faq/get-started-with-the-microsoft-store)
 
-The Store product ID, package identity/publisher, application ID `MyPDF`, executable `MyPDF.exe` and `mypdf-og.exe` launch alias are retained from MyPDF. They preserve upgrades, app data and pinned shortcuts. Only the public display name and new package filenames change.
+The Windows process is `Ashina.exe`, and new Jump List items use the `ashina.exe` launch alias. The Store product, package identity and publisher, and application ID stay stable for upgrades. The previous `mypdf-og.exe` alias also points to `Ashina.exe` so old pinned Jump List items still work.

@@ -1,4 +1,4 @@
-//! On Windows, MyPDF.exe carries its icon and version details (product name,
+//! On Windows, Ashina.exe carries its icon and version details (product name,
 //! version, copyright), which Explorer shows and code signing checks.
 fn main() {
     println!("cargo:rustc-check-cfg=cfg(mypdf_apple_translation)");
@@ -17,6 +17,8 @@ fn main() {
             .set_icon("packaging/windows/MyPDF.ico")
             .set("ProductName", "Ashina")
             .set("FileDescription", "Ashina")
+            .set("InternalName", "Ashina")
+            .set("OriginalFilename", "Ashina.exe")
             .set("CompanyName", "Ashina contributors")
             .set(
                 "LegalCopyright",

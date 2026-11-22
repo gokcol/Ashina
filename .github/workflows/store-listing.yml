@@ -24,7 +24,7 @@ jobs:
           $env:MYPDF_PREVIEW_DIR = "$PWD/artifacts/store-listing/screenshots"
           $env:MYPDF_SAMPLE_DIR = "$PWD/artifacts/store-samples"
           $env:MYPDF_DATA_DIR = "$env:RUNNER_TEMP/MyPDF-store-listing-profile"
-          cargo test --locked --bin mypdf store_listing_preview -- --ignored --exact desktop::preview::store_listing_preview
+          cargo test --locked --bin ashina store_listing_preview -- --ignored --exact desktop::preview::store_listing_preview
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           foreach ($name in @('01-read', '02-stamps', '03-forms', '04-page-layout')) {
             if (!(Test-Path "$env:MYPDF_PREVIEW_DIR/$name.png")) { throw "Missing $name.png" }

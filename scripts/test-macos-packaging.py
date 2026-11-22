@@ -43,7 +43,7 @@ elif name=='cargo':
  target=arg('--target') if '--target' in args else ''
  profile='release' if '--release' in args else 'debug'
  base=pathlib.Path(os.environ.get('CARGO_TARGET_DIR','target'))/target/profile
- if '--bin' in args:out(base/'mypdf','new-app-'+target)
+ if '--bin' in args:out(base/'ashina','new-app-'+target)
  if '--example' in args:
   p=base/'examples/app_icon';out(p,'#!/bin/sh\nprintf fixture > "$1"\n');p.chmod(0o755)
 elif name=='sips':out(arg('--out'))
@@ -139,7 +139,7 @@ def run_case(label,host='aarch64-apple-darwin',failure=None,old=True,rollback=Tr
     assert (d/'do-not-copy/secret').read_text()=='outside snapshot'
     assert (d/'dist/rollback/user-data/external').is_symlink()
   elif bundle:
-   assert (d/bundle_output/'Contents/MacOS/MyPDF').read_text()=='new-app-',label
+   assert (d/bundle_output/'Contents/MacOS/Ashina').read_text()=='new-app-',label
    assert ('--release' in builds[0])!=debug
    actual=plistlib.loads((d/bundle_output/'Contents/Info.plist').read_bytes())
    expected=plistlib.loads((d/'packaging/Info.plist').read_bytes())
@@ -148,7 +148,7 @@ def run_case(label,host='aarch64-apple-darwin',failure=None,old=True,rollback=Tr
    # Packaging a review never edits the product plist or an existing release.
    assert (d/'packaging/Info.plist').read_bytes()==(ROOT/'packaging/Info.plist').read_bytes()
   else:
-   assert (d/'dist/release/Ashina.app/Contents/MacOS/MyPDF').read_text()=='new-app-aarch64-apple-darwin',label
+   assert (d/'dist/release/Ashina.app/Contents/MacOS/Ashina').read_text()=='new-app-aarch64-apple-darwin',label
    assert (d/f'dist/release/Ashina-{VERSION}.dmg.sha256').is_file(),label
    if old:assert (d/'dist/rollback/sentinel').read_text()=='current-release',label
    elif rollback:
@@ -172,7 +172,7 @@ def run_case(label,host='aarch64-apple-darwin',failure=None,old=True,rollback=Tr
     assert (d/'dist/rollback/sentinel').read_text()=='previous-rollback'
     assert_rollback_data(d/'dist/rollback')
    else:assert_archive(archives[0])
-   assert (d/'dist/release/Ashina.app/Contents/MacOS/MyPDF').read_text()=='new-app-aarch64-apple-darwin'
+   assert (d/'dist/release/Ashina.app/Contents/MacOS/Ashina').read_text()=='new-app-aarch64-apple-darwin'
    assert not list((d/'dist').glob('.release-*'))
   print('PASS',label)
 run_case('ARM64 release: one compile and rollback rotation')

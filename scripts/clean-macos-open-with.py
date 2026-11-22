@@ -24,7 +24,7 @@ import tempfile
 import uuid
 
 REGISTER = Path('/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister')
-# The bundle identity and executable remain stable across the public rename.
+# The installed bundle keeps its identifier across executable renames.
 INSTALLED = Path('/Applications/Ashina.app')
 if not INSTALLED.exists():
     INSTALLED = Path('/Applications/SkyPDF.app')
@@ -133,13 +133,13 @@ def archive_eligibility(path: Path, roots: list[Path], installed: Path,
         return False, 'not a MyPDF desktop bundle'
     executable = info.get('CFBundleExecutable')
     icon = info.get('CFBundleIconFile')
-    if executable != 'MyPDF' or not isinstance(icon, str) or Path(icon).name != icon:
+    if executable not in ('Ashina', 'MyPDF') or not isinstance(icon, str) or Path(icon).name != icon:
         return False, 'unrecognized executable or icon metadata'
     if not icon.endswith('.icns'):
         icon += '.icns'
     # These bundles contain just the known executable/icon/signature payload.
     # A document or any other unexpected file must never be removed with one.
-    expected_files = {'Contents/Info.plist', 'Contents/MacOS/MyPDF',
+    expected_files = {'Contents/Info.plist', f'Contents/MacOS/{executable}',
                       f'Contents/Resources/{icon}', 'Contents/CodeResources',
                       'Contents/_CodeSignature/CodeResources', 'Contents/PkgInfo'}
     expected_directories = {'Contents', 'Contents/MacOS', 'Contents/Resources', 'Contents/_CodeSignature'}
@@ -161,7 +161,7 @@ def archive_eligibility(path: Path, roots: list[Path], installed: Path,
                     return False, f'unexpected file or hard link: {relative}'
             else:
                 return False, f'special file: {relative}'
-    if not (path / 'Contents/MacOS/MyPDF').is_file():
+    if not (path / 'Contents/MacOS' / executable).is_file():
         return False, 'missing app executable'
     return True, ''
 

@@ -7,12 +7,12 @@ Microsoft rejected the 3.1.2 Store title under policy 10.1.1.1 (Inaccurate Repre
 These identifiers intentionally remain unchanged:
 
 - GitHub repository `gokcol/MyPDF` and existing release URLs, so installed update clients do not encounter redirects or lose their download source.
-- Mac bundle ID `dev.mypdf.desktop`, executable `MyPDF` and existing signing identities/Keychain accounts.
-- Windows installer AppId, existing installation directory, executable `MyPDF.exe`, file-association keys and registered capabilities.
-- Microsoft Store product `9MXR0WLW42XT`, Partner Center package identity/publisher, application ID `MyPDF` and `mypdf-og.exe` launch alias.
+- Mac bundle ID `dev.mypdf.desktop` and existing signing identities and Keychain accounts.
+- Windows installer AppId, previous installation paths and the PDF association ProgID used by Windows to remember the default app.
+- Microsoft Store product `9MXR0WLW42XT`, Partner Center package identity and publisher, and application ID `MyPDF`. The legacy execution alias still launches the app for existing pinned items.
 - App-data folders under MyPDF, `MYPDF_*` environment overrides, IPC and signing storage identifiers.
 - PDF metadata/resource keys and annotation IDs beginning with MyPDF. Existing annotations, tables, OCR, watermarks and thread metadata must remain editable.
 - The `.mypdf-review` extension and its serialized format identifier, so saved review exchanges work in both versions.
-- Rust crate/binary targets, native library ABI names and icon source filenames. These are implementation names, not the displayed product name.
+- Rust library and proof CLI identifiers, native library ABI names and icon source filenames.
 
-New release files use `Ashina-<version>`. Windows portable ZIPs contain an `Ashina` folder with the compatible `MyPDF.exe` executable. Mac installs use `Ashina.app`. The Store rename is published through an update to the same product; no replacement product or new user-data migration is required.
+The desktop build target is `ashina`. Windows installers, portable ZIPs and the Store package use `Ashina.exe`. On macOS, `Ashina.app` launches `Contents/MacOS/Ashina`. Fresh standalone Windows installs default to an `Ashina` folder. An upgrade reuses its previous folder and redirects existing PDF associations to the new executable. A manually created or pinned Windows shortcut to a specific old executable path may need to be replaced.

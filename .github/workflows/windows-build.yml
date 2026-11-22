@@ -1,5 +1,5 @@
 name: Windows build
-# Builds MyPDF.exe for 64-bit Windows, packs it in a zip with the licenses,
+# Builds Ashina.exe for 64-bit Windows, packs it in a zip with the licenses,
 # and builds the Ashina-<version>-Setup.exe installer with Inno Setup.
 # Run it by hand (Actions → Windows build → Run workflow). The zip is a download
 # on the run's page; name a release tag to also attach it to that release.
@@ -110,10 +110,14 @@ jobs:
         with:
           path: dist/ocr/windows-${{ matrix.arch }}
           key: ${{ steps.ocr-cache.outputs.cache-primary-key }}
-      - run: cargo build --locked --release --bin mypdf --example ocr_smoke
+      - run: cargo build --locked --release --bin ashina --example ocr_smoke
       - name: Check native executable architecture
         shell: pwsh
-        run: '& ./scripts/test-windows-architecture.ps1 -Path target/release/mypdf.exe -Architecture $env:MYPDF_ARCH'
+        run: |
+          & ./scripts/test-windows-architecture.ps1 -Path target/release/ashina.exe -Architecture $env:MYPDF_ARCH
+          $info = (Get-Item target/release/ashina.exe).VersionInfo
+          if ($info.OriginalFilename -cne 'Ashina.exe' -or $info.InternalName -cne 'Ashina' -or
+              $info.FileDescription -cne 'Ashina' -or $info.ProductName -cne 'Ashina') { throw 'Expected Ashina process and file metadata.' }
       - name: Test ARM64 app logic
         if: matrix.arch == 'arm64'
         run: cargo test --locked --no-fail-fast
@@ -136,7 +140,7 @@ jobs:
           }
           $name = "Ashina-$version-windows-$env:MYPDF_ARCH"
           New-Item -ItemType Directory -Path "pack\Ashina" | Out-Null
-          Copy-Item target\release\mypdf.exe pack\Ashina\MyPDF.exe
+          Copy-Item target\release\ashina.exe pack\Ashina\Ashina.exe
           Copy-Item -Path @('README.md', 'FEATURES.md', 'LICENSE-MIT', 'LICENSE-APACHE', 'THIRD_PARTY_NOTICES.md') -Destination 'pack\Ashina\'
           & ./scripts/copy-translation-runtime.ps1 -Architecture $env:MYPDF_ARCH -DestinationDirectory "$pwd\pack\Ashina"
           & ./scripts/copy-ocr-runtime.ps1 -Architecture $env:MYPDF_ARCH -DestinationDirectory "$pwd\pack\Ashina"
@@ -157,7 +161,7 @@ jobs:
             $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           }
           if (-not $iscc) { throw 'Inno Setup compiler not found.' }
-          # The installer carries the same product version as MyPDF.exe.
+          # The installer carries the same product version as Ashina.exe.
           $crate = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
           $architecture = if ($env:MYPDF_ARCH -eq 'arm64') { 'arm64' } else { 'x64compatible' }
           & $iscc "/DAppVersion=$crate" "/DAppArchitecture=$architecture" "/DSource=$pwd\pack\Ashina" "/O$pwd" "/F$env:SETUP" packaging\windows\MyPDF.iss
