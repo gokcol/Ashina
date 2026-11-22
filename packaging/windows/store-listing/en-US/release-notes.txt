@@ -1,4 +1,3 @@
-Ashina 3.1.5
+Ashina 3.1.6
 
-• The Windows process now appears as Ashina.exe in Task Manager.
-• Updating keeps existing app settings and PDF associations.
+Updated links to the new Ashina GitHub repository. This update keeps your settings and PDF associations. Microsoft Store continues to deliver app updates.
