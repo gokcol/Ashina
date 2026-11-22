@@ -2,6 +2,14 @@
   "unreleased": [],
   "releases": [
     {
+      "version": "3.1.6",
+      "changes": [
+        "Restored GitHub update checks on macOS and Windows after the repository moved to gokcol/Ashina.",
+        "Mac updates use the signed feed at the new repository address. Windows downloads are available for x64 and ARM64.",
+        "If you installed an earlier version from GitHub, download 3.1.6 from GitHub Releases once to restore in-app update checks."
+      ]
+    },
+    {
       "version": "3.1.5",
       "changes": [
         "The Windows executable is now Ashina.exe, including in Task Manager, the installers, portable downloads and the Microsoft Store app.",
