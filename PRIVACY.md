@@ -131,7 +131,7 @@ must be managed through that system or provider.
 ## Contact and policy changes
 
 For privacy questions, contact the maintainer through
-[the Ashina issue tracker](https://github.com/gokcol/MyPDF/issues).
+[the Ashina issue tracker](https://github.com/gokcol/Ashina/issues).
 GitHub issues are public; do not include confidential documents, passwords or
 private keys. Information you voluntarily provide there is used to address
 your request and is also subject to GitHub's policies and retention controls.

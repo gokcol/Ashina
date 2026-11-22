@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 pub const STORE_URL: &str = "ms-windows-store://pdp/?ProductId=9MXR0WLW42XT";
-pub const RELEASES_URL: &str = "https://github.com/gokcol/MyPDF/releases";
+pub const RELEASES_URL: &str = "https://github.com/gokcol/Ashina/releases";
 pub const CHANGELOG: &str = include_str!("../changelog.json");
-const API: &str = "https://api.github.com/repos/gokcol/MyPDF/releases?per_page=100";
+const API: &str = "https://api.github.com/repos/gokcol/Ashina/releases?per_page=100";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Version(pub [u32; 4]);
@@ -118,7 +118,7 @@ fn trusted_asset(url: &str) -> bool {
             && u.username().is_empty()
             && u.password().is_none()
             && u.port().is_none()
-            && u.path().starts_with("/gokcol/MyPDF/releases/download/")
+            && u.path().starts_with("/gokcol/Ashina/releases/download/")
     })
 }
 pub fn valid_destination(channel: Channel, url: &str) -> bool {
@@ -321,7 +321,7 @@ mod tests {
     fn release(v: &str, name: &str) -> serde_json::Value {
         serde_json::json!({
             "tag_name":v,"draft":false,"prerelease":false,"published_at":"2026-11-13", "body":"Fixed images",
-            "assets":[{"name":name,"browser_download_url":format!("https://github.com/gokcol/MyPDF/releases/download/{v}/{name}"),"state":"uploaded","size":100}]
+            "assets":[{"name":name,"browser_download_url":format!("https://github.com/gokcol/Ashina/releases/download/{v}/{name}"),"state":"uploaded","size":100}]
         })
     }
     #[test]

@@ -6,9 +6,9 @@ Screenshots: upload screenshots/01-read.png first, followed by the other three.
 Screenshot captions: use the corresponding entries from captions.txt.
 Optional Store logos: upload each PNG to its matching 300 x 300, 150 x 150, or 71 x 71 field.
 Optional keywords: enter each line of keywords.txt as a separate keyword phrase.
-Privacy policy: https://github.com/gokcol/MyPDF/blob/main/PRIVACY.md
+Privacy policy: https://github.com/gokcol/Ashina/blob/main/PRIVACY.md
 Support email: orhan.gokcol@hotmail.com
-Product website: https://github.com/gokcol/MyPDF
+Product website: https://github.com/gokcol/Ashina
 
 All screenshot documents are fictional. The screenshots come from the native Windows application renderer, without desktop chrome or added marketing artwork. provenance.json records the build source and capture method.
 

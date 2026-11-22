@@ -4,9 +4,10 @@ Ashina was named MyPDF through version 3.1.1 and SkyPDF in version 3.1.2. Versio
 
 Microsoft rejected the 3.1.2 Store title under policy 10.1.1.1 (Inaccurate Representation) on November 17, 2026. The replacement Store product name is exactly **Ashina**, reserved on the same product. Do not append former app names to the Store product title. Historical names can be explained in documentation.
 
+The GitHub repository is `gokcol/Ashina`. Keep the former `gokcol/MyPDF` path available as a GitHub redirect so existing Mac update feeds and download links continue to work. GitHub builds through 3.1.5 reject the release API redirect during their in-app update check, so users need to download the next build manually from GitHub Releases. Microsoft Store installs continue to use the same product ID.
+
 These identifiers intentionally remain unchanged:
 
-- GitHub repository `gokcol/MyPDF` and existing release URLs, so installed update clients do not encounter redirects or lose their download source.
 - Mac bundle ID `dev.mypdf.desktop` and existing signing identities and Keychain accounts.
 - Windows installer AppId, previous installation paths and the PDF association ProgID used by Windows to remember the default app.
 - Microsoft Store product `9MXR0WLW42XT`, Partner Center package identity and publisher, and application ID `MyPDF`. The legacy execution alias still launches the app for existing pinned items.

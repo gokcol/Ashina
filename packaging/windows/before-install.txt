@@ -18,4 +18,4 @@ What the installer changes:
   your user profile.
 
 Ashina is licensed under MIT OR Apache-2.0. Source code:
-https://github.com/gokcol/MyPDF
+https://github.com/gokcol/Ashina

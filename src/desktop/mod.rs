@@ -1483,7 +1483,7 @@ impl Viewer {
                     });
                     ui.add_space(10.);
                     ui.horizontal(|ui| {
-                        ui.hyperlink_to("GitHub", "https://github.com/gokcol/MyPDF");
+                        ui.hyperlink_to("GitHub", "https://github.com/gokcol/Ashina");
                         ui.add_space(10.);
                         ui.hyperlink_to("Support", "mailto:orhan.gokcol@hotmail.com");
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

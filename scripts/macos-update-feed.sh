@@ -23,8 +23,8 @@ Path(output).write_text('# Version ' + version + '\n\n' + '\n'.join('- ' + x for
 PY
 python3 scripts/sparkle-sign.py --sparkle-root "$sparkle" --public-key "$public" \
     generate_appcast --embed-release-notes \
-    --download-url-prefix "https://github.com/gokcol/MyPDF/releases/download/v$version/" \
-    --full-release-notes-url https://github.com/gokcol/MyPDF/releases \
+    --download-url-prefix "https://github.com/gokcol/Ashina/releases/download/v$version/" \
+    --full-release-notes-url https://github.com/gokcol/Ashina/releases \
     "$stage"
 python3 scripts/sparkle-sign.py --sparkle-root "$sparkle" --public-key "$public" \
     sign_update --verify "$stage/appcast.xml"
