@@ -311,6 +311,7 @@ pub struct Viewer {
     /// Reduce File Size is open, with this quality chosen.
     shrink: Option<mypdf_milestone0::compress::Level>,
     sharing: sharing::State,
+    share_delivery: sharing::Delivery,
     watermark: Option<watermark::Draft>,
     nup: Option<nup::Draft>,
     ocr_confirm: bool,
@@ -392,6 +393,7 @@ impl Viewer {
             unprotect: false,
             shrink: None,
             sharing: sharing::State::default(),
+            share_delivery: sharing::Delivery::default(),
             watermark: None,
             nup: None,
             ocr_confirm: false,
@@ -1401,11 +1403,11 @@ impl Viewer {
         self.reading_keys(ctx);
     }
 
-    fn toolbar(&mut self, ctx: &egui::Context) {
+    fn toolbar(&mut self, ctx: &egui::Context) -> Option<sharing::Action> {
         self.advance_tab_closes(ctx);
         self.tab_group_dialog(ctx);
         if self.zen.is_some() {
-            return;
+            return None;
         }
         let mut action = None;
         let mut file_action = None;
@@ -1607,8 +1609,9 @@ impl Viewer {
             self.action(a, ctx);
         }
         if self.home.visible || self.comparison.is_some() {
-            return;
+            return None;
         }
+        let mut share = None;
         egui::TopBottomPanel::top("main_toolbar")
             .frame(
                 egui::Frame::new()
@@ -1647,7 +1650,7 @@ impl Viewer {
                 let control = ui::target_size(32.);
                 let gap = ui::control_gap(4.);
                 let left_width = 3. * control + 2. * gap;
-                let right_width = 3. * control + 2. * gap;
+                let right_width = 4. * control + 3. * gap;
                 const GROUP_GAP: f32 = 8.;
                 let labeled_track = track_width(ui, false);
                 let stacked = theme::comfortable()
@@ -1730,6 +1733,16 @@ impl Viewer {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
                             .add(
+                                ActionButton::new(Icon::Inspector, "Toggle right panel")
+                                    .compact()
+                                    .selected(self.inspector),
+                            )
+                            .clicked()
+                        {
+                            self.inspector = !self.inspector;
+                        }
+                        if ui
+                            .add(
                                 ActionButton::new(
                                     Icon::Zen,
                                     &format!(
@@ -1748,16 +1761,6 @@ impl Viewer {
                         }
                         if ui
                             .add(
-                                ActionButton::new(Icon::Inspector, "Toggle right panel")
-                                    .compact()
-                                    .selected(self.inspector),
-                            )
-                            .clicked()
-                        {
-                            self.inspector = !self.inspector;
-                        }
-                        if ui
-                            .add(
                                 ActionButton::new(Icon::Translate, "Translate")
                                     .compact()
                                     .selected(self.translation.open),
@@ -1767,6 +1770,7 @@ impl Viewer {
                         {
                             action = Some("translation");
                         }
+                        share = self.share_button(ui);
                     });
                 });
                 if stacked {
@@ -1976,6 +1980,7 @@ impl Viewer {
         if let Some(action) = action {
             self.action(action, ctx);
         }
+        share
     }
     fn sidebar(&mut self, ctx: &egui::Context) {
         const SIDEBAR_TABS: [(Icon, &str); 4] = [
@@ -2602,7 +2607,9 @@ impl eframe::App for Viewer {
         }
         self.editor.text_editing = false;
         self.sync_status_context();
-        self.toolbar(ctx);
+        if let Some(action) = self.toolbar(ctx) {
+            self.share_action(action, ctx, frame);
+        }
         self.updates_window(ctx);
         if self.tab_controls.take_window_drag() {
             window_drag::begin(frame, ctx);
@@ -4081,9 +4088,52 @@ mod tests {
                 events,
                 ..Default::default()
             },
-            |ctx| app.toolbar(ctx),
+            |ctx| {
+                let _ = app.toolbar(ctx);
+            },
         )
     }
+    #[test]
+    fn share_menu_requires_a_saved_pdf_for_delivery() {
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let mut app = Viewer::new(&eframe::CreationContext::_new_kittest(ctx.clone()), vec![]);
+        app.new_blank(&ctx);
+        until(&mut app, &ctx, |app| app.active_document_ready());
+
+        let output = toolbar_only_frame(&mut app, &ctx, vec![]);
+        let share = test_button_center(&output, "Share");
+        toolbar_only_frame(&mut app, &ctx, click_event(share, true));
+        toolbar_only_frame(&mut app, &ctx, click_event(share, false));
+        let output = toolbar_only_frame(&mut app, &ctx, vec![]);
+        let enabled = |output: &egui::FullOutput, label: &str| {
+            let nodes = &output
+                .platform_output
+                .accesskit_update
+                .as_ref()
+                .unwrap()
+                .nodes;
+            nodes
+                .iter()
+                .find(|(_, node)| node.label() == Some(label))
+                .is_some_and(|(_, node)| !node.is_disabled())
+        };
+        assert!(enabled(&output, "Save PDF…"));
+        assert!(enabled(&output, "Prepare for sharing…"));
+        assert!(!enabled(&output, "Copy PDF"));
+
+        let tab = &mut app.tabs[app.active];
+        tab.has_destination = true;
+        tab.unsaved_on_load = false;
+        let session = tab.session.as_mut().unwrap();
+        session.mark_saved(session.revision());
+        let output = toolbar_only_frame(&mut app, &ctx, vec![]);
+        assert!(enabled(&output, "Copy PDF"));
+        if cfg!(any(target_os = "macos", target_os = "windows")) {
+            assert!(enabled(&output, "Share with apps…"));
+        }
+    }
+
     #[test]
     fn toolbar_save_as_routes_existing_save_guard_and_sidebar_remains_a_single_left_toggle() {
         use mypdf_milestone0::annotations::{Annotation, Kind, Style};
@@ -4255,6 +4305,7 @@ mod tests {
                     "Toggle left panel",
                     "Toggle right panel",
                     "Translate",
+                    "Share",
                 ] {
                     actions.push((label, bounds(label)));
                 }
@@ -4267,7 +4318,10 @@ mod tests {
                     })
                     .expect("Zen remains available");
                 actions.push(("Zen", zen.1.bounds().unwrap()));
-                assert_eq!(actions.len(), 14);
+                assert_eq!(actions.len(), 15);
+                assert!(bounds("Share").x1 <= bounds("Translate").x0);
+                assert!(bounds("Translate").x1 <= zen.1.bounds().unwrap().x0);
+                assert!(zen.1.bounds().unwrap().x1 <= bounds("Toggle right panel").x0);
                 for (i, (label, rect)) in actions.iter().enumerate() {
                     assert!(
                         toolbar_rect.contains(pos2(rect.x0 as f32, rect.y0 as f32))

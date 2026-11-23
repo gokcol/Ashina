@@ -2,6 +2,14 @@
   "unreleased": [],
   "releases": [
     {
+      "version": "3.1.7",
+      "changes": [
+        "Share a saved PDF through the system share sheet, copy the file, or prepare a cleaned copy from the new Share menu.",
+        "Open Documents has an icon-led search field and clearer PDF rows with folder paths and keyboard shortcut hints.",
+        "The right-panel toggle is now at the far right of the main toolbar."
+      ]
+    },
+    {
       "version": "3.1.6",
       "changes": [
         "Restored GitHub update checks on macOS and Windows after the repository moved to gokcol/Ashina.",

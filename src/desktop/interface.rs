@@ -179,7 +179,9 @@ mod tests {
                         screen_rect: Some(Rect::from_min_size(pos2(0., 0.), vec2(width, 600.))),
                         ..Default::default()
                     },
-                    |ctx| app.toolbar(ctx),
+                    |ctx| {
+                        let _ = app.toolbar(ctx);
+                    },
                 );
                 let nodes = output.platform_output.accesskit_update.unwrap().nodes;
                 for label in ["Open documents (8)", "Open PDF"] {

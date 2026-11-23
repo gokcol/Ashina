@@ -369,9 +369,14 @@ mod tests {
         pointer(&mut app, &ctx, at, egui::PointerButton::Primary, false);
         frame(&mut app, &ctx, vec![egui::Event::Text("annual".into())]);
         assert_eq!(app.tab_controls.query, "annual");
-        bounds(&mut app, &ctx, "● Annual report.pdf");
+        let result = bounds(&mut app, &ctx, "● Annual report.pdf");
         frame(&mut app, &ctx, vec![]);
         assert!(egui::Popup::is_any_open(&ctx));
+        let at = pos2(result.center().x, result.bottom() - 10.);
+        pointer(&mut app, &ctx, at, egui::PointerButton::Primary, true);
+        pointer(&mut app, &ctx, at, egui::PointerButton::Primary, false);
+        assert_eq!(app.tabs[app.active].name(), "Annual report.pdf");
+        assert!(!egui::Popup::is_any_open(&ctx));
     }
 
     #[test]
@@ -957,6 +962,278 @@ fn group_actions(ui: &mut egui::Ui, groups: &[Group], current: u64) -> Option<Ac
     action
 }
 
+fn document_chooser(
+    ui: &mut egui::Ui,
+    tabs: &[&Tab],
+    group: Option<&str>,
+    query: &mut String,
+    selected: Option<u64>,
+    focus_search: bool,
+) -> (Option<Action>, bool) {
+    // The chooser follows the document appearance even on a dark tab strip.
+    let style = ui.ctx().style();
+    ui.set_style(style);
+    let colors = theme::palette_for(ui.ctx().theme() == egui::Theme::Dark);
+    ui.set_width(ui::dialog_width(ui.ctx(), 366.));
+    ui.spacing_mut().item_spacing.y = 5.;
+    ui.horizontal(|ui| {
+        let (icon, _) = ui.allocate_exact_size(vec2(24., 24.), egui::Sense::hover());
+        ui::draw_icon(ui.painter(), icon.shrink(3.), Icon::Document, colors.accent);
+        ui.add_sized(
+            [(ui.available_width() - 38.).max(40.), 24.],
+            egui::Label::new(
+                RichText::new(group.unwrap_or("Open documents"))
+                    .size(15.)
+                    .strong()
+                    .color(colors.ink),
+            )
+            .truncate()
+            .halign(egui::Align::Min),
+        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            egui::Frame::new()
+                .fill(colors.control)
+                .corner_radius(7)
+                .inner_margin(egui::Margin::symmetric(7, 2))
+                .show(ui, |ui| {
+                    ui.label(
+                        RichText::new(tabs.len().to_string())
+                            .small()
+                            .color(colors.muted),
+                    );
+                });
+        });
+    });
+    let search = document_search(ui, query, colors, focus_search);
+    let query = query.to_lowercase();
+    let mut found = false;
+    let mut choice = None;
+    egui::ScrollArea::vertical()
+        .id_salt("open_document_list")
+        .max_height(320.)
+        .show(ui, |ui| {
+            for tab in tabs.iter().copied().filter(|tab| matches(tab, &query)) {
+                found = true;
+                let action = ui.push_id(tab.id, |ui| {
+                    document_choice(ui, tab, selected == Some(tab.id), colors)
+                });
+                if action.inner.is_some() {
+                    choice = action.inner;
+                }
+            }
+        });
+    if !found {
+        ui.add_space(4.);
+        ui.label(
+            RichText::new(if tabs.is_empty() {
+                "No documents in this group"
+            } else {
+                "No matching documents"
+            })
+            .color(colors.muted),
+        );
+    }
+    if tabs.len() > 1 {
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Switch tabs").small().color(colors.muted));
+            for modifiers in [
+                egui::Modifiers::CTRL,
+                egui::Modifiers::CTRL | egui::Modifiers::SHIFT,
+            ] {
+                egui::Frame::new()
+                    .fill(colors.paper)
+                    .stroke(Stroke::new(1., colors.line))
+                    .corner_radius(4)
+                    .inner_margin(egui::Margin::symmetric(5, 2))
+                    .show(ui, |ui| {
+                        ui.label(
+                            RichText::new(ui::shortcut_label(egui::KeyboardShortcut::new(
+                                modifiers,
+                                egui::Key::Tab,
+                            )))
+                            .size(11.)
+                            .color(colors.muted),
+                        );
+                    });
+            }
+        });
+    }
+    (choice, search.has_focus())
+}
+
+fn document_search(
+    ui: &mut egui::Ui,
+    query: &mut String,
+    colors: &theme::Palette,
+    focus: bool,
+) -> egui::Response {
+    let mut field = egui::Frame::new()
+        .fill(colors.paper)
+        .stroke(Stroke::new(1., colors.line))
+        .corner_radius(8)
+        .inner_margin(egui::Margin::symmetric(9, 3))
+        .begin(ui);
+    let response = field
+        .content_ui
+        .horizontal(|ui| {
+            let (icon, _) = ui.allocate_exact_size(vec2(16., 16.), egui::Sense::hover());
+            ui::draw_icon(ui.painter(), icon, Icon::Search, colors.muted);
+            ui.add(
+                egui::TextEdit::singleline(query)
+                    .frame(false)
+                    .margin(vec2(2., 0.))
+                    .vertical_align(egui::Align::Center)
+                    .min_size(vec2(0., ui::target_size(26.)))
+                    .desired_width(ui.available_width())
+                    .hint_text("Find an open document…"),
+            )
+        })
+        .inner;
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Find an open document")
+    });
+    if focus {
+        response.request_focus();
+    }
+    if response.has_focus() {
+        field.frame.stroke.color = colors.accent;
+    }
+    field.end(ui);
+    response
+}
+
+fn document_choice(
+    ui: &mut egui::Ui,
+    tab: &Tab,
+    selected: bool,
+    colors: &theme::Palette,
+) -> Option<Action> {
+    let (row, _) = ui.allocate_exact_size(
+        vec2(ui.available_width(), ui::target_size(51.)),
+        egui::Sense::hover(),
+    );
+    let touch = ui::target_size(30.);
+    let close_rect = Rect::from_center_size(
+        pos2(row.right() - touch / 2. - 4., row.center().y),
+        vec2(touch, touch),
+    );
+    let pick_rect = Rect::from_min_max(row.min, pos2(close_rect.left() - 2., row.bottom()));
+    let pick = ui.interact(pick_rect, ui.id().with("activate"), egui::Sense::click());
+    let close = ui.interact(close_rect, ui.id().with("close"), egui::Sense::click());
+    let name = tab.name();
+    let unsaved = dirty(tab);
+    let label = if unsaved {
+        format!("● {name}")
+    } else {
+        name.clone()
+    };
+    pick.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, label.as_str())
+    });
+    close.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Close {name}"))
+    });
+    if selected || pick.hovered() || pick.has_focus() {
+        ui.painter().rect_filled(
+            row,
+            8.,
+            if selected {
+                colors.accent_soft
+            } else {
+                colors.paper
+            },
+        );
+    }
+    let tile = Rect::from_center_size(pos2(row.left() + 22., row.center().y), vec2(28., 30.));
+    ui.painter().rect_filled(
+        tile,
+        6.,
+        if selected {
+            colors.surface
+        } else {
+            colors.control
+        },
+    );
+    ui::draw_icon(ui.painter(), tile.shrink(6.), Icon::Document, colors.accent);
+    if unsaved {
+        ui.painter()
+            .circle_filled(tile.right_bottom() - vec2(2., 2.), 3., colors.warning);
+    }
+    if close.hovered() || close.has_focus() {
+        ui.painter()
+            .rect_filled(close_rect, 6., colors.control_hover);
+    }
+    ui::draw_icon(
+        ui.painter(),
+        Rect::from_center_size(close_rect.center(), vec2(14., 14.)),
+        Icon::Close,
+        if close.hovered() || close.has_focus() {
+            colors.ink
+        } else {
+            colors.muted
+        },
+    );
+    let folder = if tab.has_destination {
+        tab.path
+            .parent()
+            .map(|p| {
+                let mut parts: Vec<_> = p
+                    .components()
+                    .rev()
+                    .take(2)
+                    .map(|part| part.as_os_str().to_string_lossy())
+                    .collect();
+                parts.reverse();
+                parts.join(std::path::MAIN_SEPARATOR_STR)
+            })
+            .unwrap_or_default()
+    } else {
+        "Not saved yet".into()
+    };
+    ui.ctx().accesskit_node_builder(pick.id, |node| {
+        node.set_description(folder.as_str());
+    });
+    let left = tile.right() + 10.;
+    let width = (pick_rect.right() - left - 6.).max(1.);
+    chooser_text(
+        ui,
+        &name,
+        pos2(left, row.center().y - 16.),
+        width,
+        ui::bold(ui, 13.),
+        colors.ink,
+    );
+    chooser_text(
+        ui,
+        &folder,
+        pos2(left, row.center().y + 2.),
+        width,
+        FontId::proportional(11.),
+        colors.muted,
+    );
+    if close.on_hover_text(format!("Close {name}")).clicked() {
+        Some(Action::Close(tab.id))
+    } else if pick.on_hover_text(tab.path.display().to_string()).clicked() {
+        Some(Action::Select(tab.id))
+    } else {
+        None
+    }
+}
+
+fn chooser_text(
+    ui: &egui::Ui,
+    value: &str,
+    at: egui::Pos2,
+    width: f32,
+    font: FontId,
+    color: Color32,
+) {
+    let mut job = egui::text::LayoutJob::simple_singleline(value.into(), font, color);
+    job.wrap = egui::text::TextWrapping::truncate_at_width(width);
+    ui.painter().galley(at, ui.painter().layout_job(job), color);
+}
+
 impl Viewer {
     pub(super) fn sync_tab_group(&mut self) {
         if self.home.visible {
@@ -1352,18 +1629,27 @@ impl Viewer {
             ui.painter().rect_filled(rect, 5., theme::hover());
         }
         let center = pos2(
-            rect.center().x,
+            rect.center().x + if group_name.is_some() { 0. } else { 7. },
             if group_name.is_some() {
                 rect.top() + 8.
             } else {
                 rect.center().y
             },
         );
+        let chevron_width = if group_name.is_some() { 5. } else { 3.5 };
+        if group_name.is_none() {
+            ui::draw_icon(
+                ui.painter(),
+                Rect::from_center_size(rect.center() - vec2(5., 0.), vec2(14., 14.)),
+                Icon::Document,
+                theme::ink(),
+            );
+        }
         ui.painter().add(egui::Shape::line(
             vec![
-                center + vec2(-5., -2.),
+                center + vec2(-chevron_width, -2.),
                 center + vec2(0., 3.),
-                center + vec2(5., -2.),
+                center + vec2(chevron_width, -2.),
             ],
             Stroke::new(1.8, theme::ink()),
         ));
@@ -1399,104 +1685,22 @@ impl Viewer {
             self.tab_controls.query.clear();
         }
         egui::Popup::menu(&response)
+            .frame(egui::Frame::popup(&ctx.style()).inner_margin(egui::Margin::same(12)))
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| {
-                ui.set_width(ui::dialog_width(ctx, 360.));
-                ui.spacing_mut().item_spacing.y = 3.;
-                ui.strong(group_name.unwrap_or("Open documents"));
-                let search = ui.add(
-                    egui::TextEdit::singleline(&mut self.tab_controls.query)
-                        .hint_text("Find an open document…")
-                        .desired_width(f32::INFINITY),
+                let (choice, search_focused) = document_chooser(
+                    ui,
+                    &visible,
+                    group_name,
+                    &mut self.tab_controls.query,
+                    selected,
+                    response.clicked(),
                 );
-                if response.clicked() {
-                    search.request_focus();
+                self.editor.text_editing |= search_focused;
+                if choice.is_some() {
+                    action = choice;
+                    ui.close();
                 }
-                self.editor.text_editing |= search.has_focus();
-                ui.separator();
-                let query = self.tab_controls.query.to_lowercase();
-                let mut found = false;
-                egui::ScrollArea::vertical()
-                    .max_height(320.)
-                    .show(ui, |ui| {
-                        for tab in &visible {
-                            if !matches(tab, &query) {
-                                continue;
-                            }
-                            found = true;
-                            ui.push_id(("document_choice", tab.id), |ui| {
-                                ui.horizontal(|ui| {
-                                    let caption = format!(
-                                        "{}{}",
-                                        if dirty(tab) { "● " } else { "" },
-                                        tab.name()
-                                    );
-                                    let w = (ui.available_width()
-                                        - ui::control_height()
-                                        - ui.spacing().item_spacing.x)
-                                        .max(40.);
-                                    if ui
-                                        .add_sized(
-                                            [w, ui::target_size(26.)],
-                                            egui::Button::new((caption, egui::Atom::grow()))
-                                                .selected(selected == Some(tab.id))
-                                                .truncate(),
-                                        )
-                                        .on_hover_text(tab.path.display().to_string())
-                                        .clicked()
-                                    {
-                                        action = Some(Action::Select(tab.id));
-                                        ui.close();
-                                    }
-                                    if ui
-                                        .add(
-                                            ActionButton::new(Icon::Close, "Close document")
-                                                .compact(),
-                                        )
-                                        .clicked()
-                                    {
-                                        action = Some(Action::Close(tab.id));
-                                        ui.close();
-                                    }
-                                });
-                                let folder = if tab.has_destination {
-                                    tab.path
-                                        .parent()
-                                        .map(|p| {
-                                            let mut parts: Vec<_> = p
-                                                .components()
-                                                .rev()
-                                                .take(2)
-                                                .map(|part| {
-                                                    part.as_os_str().to_string_lossy().into_owned()
-                                                })
-                                                .collect();
-                                            parts.reverse();
-                                            parts.join(std::path::MAIN_SEPARATOR_STR)
-                                        })
-                                        .unwrap_or_default()
-                                } else {
-                                    "Not saved yet".into()
-                                };
-                                ui.add(
-                                    egui::Label::new(
-                                        RichText::new(folder).small().color(theme::muted()),
-                                    )
-                                    .truncate(),
-                                )
-                                .on_hover_text(tab.path.display().to_string());
-                            });
-                        }
-                    });
-                if !found {
-                    ui.weak(if visible.is_empty() {
-                        "No documents in this group"
-                    } else {
-                        "No matching documents"
-                    });
-                }
-                ui.separator();
-                ui.weak("Ctrl+Tab / Ctrl+Shift+Tab to switch");
             });
         let events = ctx.input(|i| i.events.clone());
         if let Some(command) = self.tab_controls.tab_gesture(

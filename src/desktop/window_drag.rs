@@ -162,7 +162,9 @@ mod tests {
                 events,
                 ..Default::default()
             },
-            |ctx| app.toolbar(ctx),
+            |ctx| {
+                let _ = app.toolbar(ctx);
+            },
         );
         (output, app.tab_controls.take_window_drag())
     }

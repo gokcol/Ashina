@@ -360,6 +360,7 @@ pub(super) enum Icon {
     Right,
     Import,
     Export,
+    Share,
     Crop,
     Extract,
     Split,
@@ -433,7 +434,9 @@ fn control_icon_family_for(
     }
     match icon {
         Icon::Open | Icon::Blank | Icon::Library => Some(F::Document),
-        Icon::Save | Icon::SaveAs | Icon::Sign | Icon::Export | Icon::Stamp => Some(F::Signing),
+        Icon::Save | Icon::SaveAs | Icon::Sign | Icon::Export | Icon::Share | Icon::Stamp => {
+            Some(F::Signing)
+        }
         Icon::Pen | Icon::Text | Icon::Shapes | Icon::Form | Icon::Translate | Icon::Note => {
             Some(F::Editing)
         }
@@ -917,6 +920,13 @@ fn draw_icon_impl(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color3
             ]);
             line(&[[0.5, 0.6], [0.5, 0.06]]);
             line(&[[0.33, 0.22], [0.5, 0.06], [0.67, 0.22]]);
+        }
+        Icon::Share => {
+            line(&[[0.32, 0.42], [0.66, 0.25]]);
+            line(&[[0.32, 0.58], [0.66, 0.75]]);
+            for center in [[0.20, 0.50], [0.79, 0.19], [0.79, 0.81]] {
+                painter.circle_stroke(p(center[0], center[1]), rect.width() * 0.12, stroke);
+            }
         }
         Icon::Split => {
             line(&[[0.5, 0.92], [0.5, 0.56], [0.2, 0.26], [0.2, 0.1]]);

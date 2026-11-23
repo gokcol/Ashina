@@ -4,6 +4,151 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc,
 };
+
+mod system;
+
+pub(super) enum Action {
+    System(Rect),
+    Copy,
+    Save,
+    Prepare,
+}
+
+#[derive(Default)]
+pub(super) struct Delivery {
+    system: system::State,
+    clipboard: Option<arboard::Clipboard>,
+}
+
+impl Viewer {
+    fn share_needs_save(&self, tab: &Tab) -> bool {
+        !tab.has_destination
+            || tab.unsaved_on_load
+            || tab.session.as_ref().is_some_and(|session| {
+                session.dirty()
+                    || self.editor.draft.as_ref().is_some_and(|draft| {
+                        tab.selected_annotation.as_ref() == Some(&draft.id)
+                            && session
+                                .annotations
+                                .iter()
+                                .any(|mark| mark.id == draft.id && mark != draft)
+                    })
+            })
+            || self.content.has_pending_text_change(tab.id)
+            || self.pending_form_edits(tab.id)
+            || self.table.has_editor(tab.id)
+    }
+
+    pub(super) fn share_button(&self, ui: &mut egui::Ui) -> Option<Action> {
+        let response = ui.add_enabled(
+            self.active_document_ready(),
+            ActionButton::new(Icon::Share, "Share").compact(),
+        );
+        let anchor = response.rect;
+        let mut chosen = None;
+        egui::Popup::menu(&response).show(|ui| {
+            let Some(tab) = self.tabs.get(self.active) else {
+                ui.close();
+                return;
+            };
+            let idle =
+                !self.saving && !self.content.busy && !self.organizer.busy && !self.signature_busy;
+            let needs_save = self.share_needs_save(tab);
+            let mut choices = Vec::new();
+            if cfg!(any(target_os = "macos", target_os = "windows")) {
+                choices.push((
+                    Icon::Share,
+                    "Share with apps…",
+                    Action::System(anchor),
+                    idle && !needs_save,
+                ));
+            }
+            choices.push((Icon::Copy, "Copy PDF", Action::Copy, idle && !needs_save));
+            if needs_save {
+                choices.push((
+                    Icon::Save,
+                    "Save PDF…",
+                    Action::Save,
+                    idle && tab.bytes.is_some(),
+                ));
+            }
+            choices.push((
+                Icon::Shield,
+                "Prepare for sharing…",
+                Action::Prepare,
+                idle && tab.session.is_some(),
+            ));
+            let width = ui::menu_width(ui, choices.iter().map(|(_, label, _, _)| (*label, None)));
+            if needs_save {
+                ui.weak("Save this PDF to share it.");
+            }
+            for (icon, label, action, enabled) in choices {
+                if ui
+                    .add_enabled(enabled, ui::MenuItem::new(icon, label).width(width))
+                    .clicked()
+                {
+                    chosen = Some(action);
+                    ui.close();
+                }
+            }
+        });
+        chosen
+    }
+
+    pub(super) fn share_action(
+        &mut self,
+        action: Action,
+        ctx: &egui::Context,
+        frame: &eframe::Frame,
+    ) {
+        match action {
+            Action::Save => return self.action("save", ctx),
+            Action::Prepare => return self.request_sharing(),
+            Action::Copy | Action::System(_) => {}
+        }
+        let Some(id) = self.tabs.get(self.active).map(|tab| tab.id) else {
+            return;
+        };
+        if self.unfinished_edit(Some(id)) {
+            return;
+        }
+        let tab = &self.tabs[self.active];
+        if self.share_needs_save(tab) {
+            self.status = Some(("Save this PDF before sharing it.".into(), true));
+            return;
+        }
+        let path = tab.path.clone();
+        if !path.is_file() {
+            self.status = Some((
+                "The saved PDF is unavailable. Use Save As to choose a new location.".into(),
+                true,
+            ));
+            return;
+        }
+        let result = match action {
+            Action::System(anchor) => {
+                self.share_delivery
+                    .system
+                    .show(&path, anchor, ctx.zoom_factor(), frame)
+            }
+            Action::Copy => (|| {
+                let mut clipboard = arboard::Clipboard::new()?;
+                clipboard.set().file_list(&[path])?;
+                self.share_delivery.clipboard = Some(clipboard);
+                self.status = Some((
+                    "PDF copied. Paste it into another app or folder.".into(),
+                    false,
+                ));
+                Ok(())
+            })(),
+            _ => unreachable!("Save and prepare are handled before sharing files"),
+        };
+        if let Err(error) = result {
+            self.status = Some((format!("Could not share PDF: {error}"), true));
+        }
+    }
+}
+
 enum Update {
     Progress(usize, usize),
     Done(Result<Report, String>),
