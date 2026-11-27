@@ -904,6 +904,81 @@ fn signature_backgrounds_paint_what_their_names_say() {
     );
 }
 
+#[tokio::test]
+async fn signature_templates_localize_and_keep_artwork_in_the_expected_region() {
+    use signing::{DesktopSigningRequest, SignatureLanguage, SignatureTemplate};
+    let mut png = std::io::Cursor::new(Vec::new());
+    image::RgbaImage::from_pixel(120, 36, image::Rgba([180, 20, 35, 255]))
+        .write_to(&mut png, image::ImageFormat::Png)
+        .unwrap();
+    let asset =
+        mypdf_milestone0::assets::Asset::from_image_bytes("Logo", &png.into_inner()).unwrap();
+    let mut request = DesktopSigningRequest {
+        name: "Deniz Güneş".into(),
+        rect: Some([40., 520., 280., 600.]),
+        artwork: Some(asset),
+        ..Default::default()
+    };
+    assert_eq!(request.design.template, SignatureTemplate::CleanSplit);
+    let preview = |request: &DesktopSigningRequest| {
+        mypdf_milestone0::assets::decode_png(&signing::signature_artwork(request).unwrap())
+            .unwrap()
+            .into_rgba8()
+    };
+    let red = |image: &image::RgbaImage| {
+        image
+            .enumerate_pixels()
+            .filter(|(_, _, p)| p[0] > 160 && p[1] < 40 && p[3] > 200)
+            .map(|(x, y, _)| (x, y))
+            .collect::<Vec<_>>()
+    };
+    let english = preview(&request);
+    assert_eq!(english.get_pixel(0, 0)[3], 0);
+    let left = red(&english);
+    assert!(!left.is_empty() && left.iter().all(|(x, _)| *x < english.width() / 2));
+    request.design.language = SignatureLanguage::Turkish;
+    let turkish = preview(&request);
+    request.design.language = SignatureLanguage::German;
+    let german = preview(&request);
+    assert_ne!(english, turkish);
+    assert_ne!(turkish, german);
+    assert_eq!(left, red(&german));
+
+    request.design.template = SignatureTemplate::NameFields;
+    let inferred = preview(&request);
+    assert!(red(&inferred).is_empty());
+    request.design.given_name = "Deniz Ela".into();
+    request.design.family_name = "Güneş Kaya".into();
+    assert_ne!(inferred, preview(&request));
+
+    request.design.template = SignatureTemplate::Ink;
+    request.artwork = Some(mypdf_milestone0::assets::Asset::new(
+        "Handwriting",
+        ann::Kind::Ink {
+            strokes: vec![vec![[0., 0.8], [0.3, 0.1], [0.6, 0.9], [1., 0.2]]],
+        },
+        ann::Style {
+            color: [0.71, 0.08, 0.14],
+            width: 2.,
+            ..Default::default()
+        },
+        3.,
+    ));
+    let ink = preview(&request);
+    let above = red(&ink);
+    assert!(!above.is_empty() && above.iter().all(|(_, y)| *y < ink.height() / 2));
+
+    request.design.template = SignatureTemplate::Compact;
+    request.rect = Some([40., 520., 132., 552.]);
+    assert!(red(&preview(&request)).is_empty());
+    let signer = identity::FileSigner::load(&id().pkcs12, PASSWORD, None).unwrap();
+    let signed = signing::sign_custom(&source(0), &signer, &request)
+        .await
+        .unwrap();
+    let report = signing::verify(&signed, None).unwrap();
+    assert!(report[0].crypto_valid && report[0].digest_matches && report[0].covers_current_file);
+}
+
 #[test]
 fn signature_text_shrinks_to_fit_the_smallest_box() {
     use mypdf_milestone0::annotations::{Kind, Style};
@@ -1209,11 +1284,25 @@ fn signature_inside_edges_keep_text_and_rotated_images_within_their_regions() {
     }
     request.artwork = None;
     request.layout = signing::AppearanceLayout::DetailsOnly;
-    let original = bounds(&render(&request));
-    request.text_style.insets = [20., 15., 10., 25.];
-    let spaced = bounds(&render(&request));
-    assert!(spaced.0 > original.0 + 80 && spaced.1 > original.1 + 20);
-    assert!(spaced.2 < 540 && spaced.3 < 150, "{spaced:?}");
+    for template in [
+        signing::SignatureTemplate::Classic,
+        signing::SignatureTemplate::CleanSplit,
+    ] {
+        request.design.template = template;
+        request.text_style.insets = [0.; 4];
+        let original = bounds(&render(&request));
+        request.text_style.insets = [20., 15., 10., 25.];
+        let spaced = bounds(&render(&request));
+        assert!(spaced.0 > original.0 + 80, "{template:?}: {spaced:?}");
+        // Classic starts at the top; Clean Split centers its rows and can touch the bottom inset sooner.
+        let min_down = if template == signing::SignatureTemplate::Classic {
+            20
+        } else {
+            0
+        };
+        assert!(spaced.1 > original.1 + min_down, "{template:?}: {spaced:?}");
+        assert!(spaced.2 < 540 && spaced.3 < 150, "{spaced:?}");
+    }
     request.text_style.insets[0] = f32::NAN;
     assert!(signing::signature_artwork(&request).is_err());
     request.text_style.insets = [0.; 4];

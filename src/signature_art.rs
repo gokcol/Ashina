@@ -39,86 +39,116 @@ pub fn lettering(
     width: f32,
     align: u8,
 ) -> Result<(String, f32)> {
-    ensure!(
-        text.len() <= 4096 && size.is_finite() && size >= 1. && width.is_finite() && width > 0.,
-        "Invalid signature lettering"
-    );
-    let bytes = std::fs::read(font)?;
-    let face = rustybuzz::Face::from_slice(&bytes, 0).context("Cannot read signature font")?;
-    let scale = size / face.units_per_em() as f32;
-    let measure = |s: &str| {
-        shape(&face, s)
-            .glyph_positions()
-            .iter()
-            .map(|g| g.x_advance as f32 * scale)
-            .sum::<f32>()
-    };
-    let mut lines = Vec::new();
-    for paragraph in text.split('\n') {
-        let mut line = String::new();
-        for word in paragraph.split_whitespace() {
-            let candidate = if line.is_empty() {
-                word.to_owned()
-            } else {
-                format!("{line} {word}")
-            };
-            if !line.is_empty() && measure(&candidate) > width {
-                lines.push(line);
-                line = word.into();
-            } else {
-                line = candidate;
-            }
-        }
-        lines.push(line);
+    Lettering::load(font)?.render(text, size, color, width, align, true)
+}
+
+pub(crate) struct Lettering(Vec<u8>);
+
+impl Lettering {
+    pub(crate) fn load(font: &Path) -> Result<Self> {
+        Ok(Self(std::fs::read(font)?))
     }
-    let line_height = ((face.ascender() as f32 - face.descender() as f32) * scale).max(size * 1.25);
-    let height = lines.len() as f32 * line_height + 2.;
-    let mut paths = String::new();
-    for (row, line) in lines.iter().enumerate() {
-        let glyphs = shape(&face, line);
+
+    pub(crate) fn render(
+        &self,
+        text: &str,
+        size: f32,
+        color: [f32; 3],
+        width: f32,
+        align: u8,
+        wrap: bool,
+    ) -> Result<(String, f32)> {
         ensure!(
-            glyphs.glyph_infos().iter().all(|g| g.glyph_id != 0),
-            "This font does not contain every character in your signature"
+            text.len() <= 4096 && size.is_finite() && size >= 1. && width.is_finite() && width > 0.,
+            "Invalid signature lettering"
         );
-        let line_width = measure(line);
-        ensure!(
-            line_width <= width + 0.1,
-            "Signature text is too wide for this font size"
-        );
-        let mut x = match align {
-            1 => (width - line_width) / 2.,
-            2 => width - line_width,
-            _ => 0.,
+        let face = rustybuzz::Face::from_slice(&self.0, 0).context("Cannot read signature font")?;
+        let units = face.units_per_em() as f32;
+        let measure = |s: &str| {
+            shape(&face, s)
+                .glyph_positions()
+                .iter()
+                .map(|g| g.x_advance as f32)
+                .sum::<f32>()
+                / units
         };
-        let baseline = 1. + row as f32 * line_height + face.ascender() as f32 * scale;
-        for (info, pos) in glyphs.glyph_infos().iter().zip(glyphs.glyph_positions()) {
-            let mut outline = Outline(String::new());
-            face.outline_glyph(ttf_parser::GlyphId(info.glyph_id as u16), &mut outline);
-            if !outline.0.is_empty() {
-                write!(
-                    paths,
-                    "<path transform=\"translate({} {}) scale({scale} {})\" d=\"{}\"/>",
-                    x + pos.x_offset as f32 * scale,
-                    baseline - pos.y_offset as f32 * scale,
-                    -scale,
-                    outline.0
-                )?;
+        let mut lines = Vec::new();
+        let size = if wrap {
+            for paragraph in text.split('\n') {
+                let mut line = String::new();
+                for word in paragraph.split_whitespace() {
+                    let candidate = if line.is_empty() {
+                        word.to_owned()
+                    } else {
+                        format!("{line} {word}")
+                    };
+                    if !line.is_empty() && measure(&candidate) * size > width {
+                        lines.push(line);
+                        line = word.into();
+                    } else {
+                        line = candidate;
+                    }
+                }
+                lines.push(line);
             }
-            x += pos.x_advance as f32 * scale;
+            size
+        } else {
+            let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+            let fitted = size.min(width / measure(&line).max(f32::EPSILON));
+            lines.push(line);
+            fitted
+        };
+        let scale = size / units;
+        let line_height =
+            ((face.ascender() as f32 - face.descender() as f32) * scale).max(size * 1.25);
+        let height = lines.len() as f32 * line_height + 2.;
+        let mut paths = String::new();
+        for (row, line) in lines.iter().enumerate() {
+            let glyphs = shape(&face, line);
+            ensure!(
+                glyphs.glyph_infos().iter().all(|g| g.glyph_id != 0),
+                "This font does not contain every character in your signature"
+            );
+            let line_width = measure(line) * size;
+            ensure!(
+                line_width <= width + 0.1,
+                "Signature text is too wide for this font size"
+            );
+            let mut x = match align {
+                1 => (width - line_width) / 2.,
+                2 => width - line_width,
+                _ => 0.,
+            };
+            let baseline = 1. + row as f32 * line_height + face.ascender() as f32 * scale;
+            for (info, pos) in glyphs.glyph_infos().iter().zip(glyphs.glyph_positions()) {
+                let mut outline = Outline(String::new());
+                face.outline_glyph(ttf_parser::GlyphId(info.glyph_id as u16), &mut outline);
+                if !outline.0.is_empty() {
+                    write!(
+                        paths,
+                        "<path transform=\"translate({} {}) scale({scale} {})\" d=\"{}\"/>",
+                        x + pos.x_offset as f32 * scale,
+                        baseline - pos.y_offset as f32 * scale,
+                        -scale,
+                        outline.0
+                    )?;
+                }
+                x += pos.x_advance as f32 * scale;
+            }
         }
+        let color = format!(
+            "#{:02x}{:02x}{:02x}",
+            (color[0] * 255.) as u8,
+            (color[1] * 255.) as u8,
+            (color[2] * 255.) as u8
+        );
+        Ok((
+            format!(
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {width} {height}\"><g fill=\"{color}\">{paths}</g></svg>"
+            ),
+            height,
+        ))
     }
-    let color = format!(
-        "#{:02x}{:02x}{:02x}",
-        (color[0] * 255.) as u8,
-        (color[1] * 255.) as u8,
-        (color[2] * 255.) as u8
-    );
-    Ok((
-        format!(
-            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {width} {height}\"><g fill=\"{color}\">{paths}</g></svg>"
-        ),
-        height,
-    ))
 }
 
 /// Keep these indices stable: saved editor choices use them.

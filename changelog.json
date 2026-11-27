@@ -2,6 +2,14 @@
   "unreleased": [],
   "releases": [
     {
+      "version": "3.1.8",
+      "changes": [
+        "Choose a digital signature template: Clean Split, Name Fields, Compact or Ink.",
+        "Preview your exact signature box on the PDF in English, Turkish or German before signing.",
+        "Use a handwritten signature, a typed signature, a picture or a logo in Clean Split and Ink."
+      ]
+    },
+    {
       "version": "3.1.7",
       "changes": [
         "Share a saved PDF through the system share sheet, copy the file, or prepare a cleaned copy from the new Share menu.",

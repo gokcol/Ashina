@@ -3,7 +3,9 @@
 //! certificates. Written for people who have never handled a certificate.
 use super::*;
 use mypdf_milestone0::assets::Asset;
-use mypdf_milestone0::signing::Background;
+use mypdf_milestone0::signing::{
+    Background, SignatureDesign, SignatureLanguage, SignatureTemplate,
+};
 use std::hash::{Hash, Hasher};
 
 /// A saved signature: the digital ID that signs and how it looks on the page.
@@ -22,6 +24,8 @@ pub(super) struct SavedSignature {
     /// A drawn, typed or imported image from the library.
     pub asset_id: Option<String>,
     pub background: Background,
+    #[serde(default = "SignatureDesign::classic")]
+    pub design: SignatureDesign,
     pub transform: signing::AppearanceTransform,
     pub text_style: signing::SignatureTextStyle,
 }
@@ -36,7 +40,8 @@ impl Default for SavedSignature {
             show_date: true,
             note: String::new(),
             asset_id: None,
-            background: Background::White,
+            background: Background::Clear,
+            design: SignatureDesign::default(),
             transform: Default::default(),
             text_style: Default::default(),
         }
@@ -45,13 +50,24 @@ impl Default for SavedSignature {
 impl SavedSignature {
     /// How the box is composed, or None when it would show nothing.
     pub fn layout(&self) -> Option<AppearanceLayout> {
-        let details = self.show_name || self.show_date || !self.note.trim().is_empty();
-        match (self.asset_id.is_some(), details) {
-            (true, true) => Some(AppearanceLayout::ImageAndDetails),
-            (true, false) => Some(AppearanceLayout::ImageOnly),
-            (false, true) => Some(AppearanceLayout::DetailsOnly),
-            (false, false) => None,
-        }
+        layout_for(
+            self.design.template,
+            self.asset_id.is_some(),
+            self.show_name || self.show_date || !self.note.trim().is_empty(),
+        )
+    }
+}
+
+fn layout_for(
+    template: SignatureTemplate,
+    has_artwork: bool,
+    details: bool,
+) -> Option<AppearanceLayout> {
+    match (template.uses_artwork() && has_artwork, details) {
+        (true, true) => Some(AppearanceLayout::ImageAndDetails),
+        (true, false) => Some(AppearanceLayout::ImageOnly),
+        (false, true) => Some(AppearanceLayout::DetailsOnly),
+        (false, false) => None,
     }
 }
 
@@ -63,6 +79,7 @@ pub(super) struct Look {
     pub show_date: bool,
     pub note: String,
     pub background: Background,
+    pub design: SignatureDesign,
     pub transform: signing::AppearanceTransform,
     pub text_style: signing::SignatureTextStyle,
 }
@@ -74,6 +91,7 @@ impl Look {
             show_date: signature.show_date,
             note: signature.note.clone(),
             background: signature.background,
+            design: signature.design.clone(),
             transform: signature.transform,
             text_style: signature.text_style.clone(),
         }
@@ -86,11 +104,21 @@ impl Look {
         request.show_name = self.show_name;
         request.show_date = self.show_date;
         request.background = self.background;
+        request.design = self.design.clone();
         request.transform = self.transform;
         request.text_style = self.text_style.clone();
         if request.reason.trim().is_empty() {
             request.reason = self.note.trim().to_owned();
         }
+        request.layout = layout_for(
+            self.design.template,
+            request.artwork.is_some(),
+            self.show_name
+                || self.show_date
+                || !request.reason.trim().is_empty()
+                || !request.location.trim().is_empty(),
+        )
+        .unwrap_or(AppearanceLayout::DetailsOnly);
     }
 }
 
@@ -279,6 +307,10 @@ fn request_key(request: &DesktopSigningRequest) -> u64 {
     request.location.hash(&mut h);
     request.show_name.hash(&mut h);
     request.show_date.hash(&mut h);
+    request.design.hash(&mut h);
+    if request.show_date && request.layout != AppearanceLayout::ImageOnly {
+        (time::OffsetDateTime::now_utc().unix_timestamp() / 60).hash(&mut h);
+    }
     serde_json::to_string(&request.text_style)
         .unwrap_or_default()
         .hash(&mut h);
@@ -299,13 +331,21 @@ fn request_key(request: &DesktopSigningRequest) -> u64 {
 }
 
 /// A box of a sensible size for showing a signature on its own.
-fn sample_rect(layout: AppearanceLayout, artwork: Option<&Asset>) -> [f32; 4] {
+fn sample_rect(
+    layout: AppearanceLayout,
+    artwork: Option<&Asset>,
+    template: SignatureTemplate,
+) -> [f32; 4] {
     match layout {
         AppearanceLayout::ImageOnly => {
             let aspect = artwork.map_or(3., |a| a.aspect);
             [0., 0., 220., (220. / aspect).clamp(24., 110.)]
         }
-        _ => [0., 0., 300., 90.],
+        _ => match template {
+            SignatureTemplate::Compact => [0., 0., 150., 42.],
+            SignatureTemplate::Ink => [0., 0., 210., 92.],
+            _ => [0., 0., 300., 90.],
+        },
     }
 }
 
@@ -879,6 +919,71 @@ fn text_field(ui: &mut egui::Ui, value: &mut String, hint: &str, limit: usize) -
     )
 }
 
+/// Returns true when a different template was selected.
+pub(super) fn design_choices(
+    ui: &mut egui::Ui,
+    design: &mut SignatureDesign,
+    background: &mut Background,
+    transform: &mut signing::AppearanceTransform,
+    text_style: &mut signing::SignatureTextStyle,
+) -> bool {
+    let previous = design.template;
+    ui.horizontal_wrapped(|ui| {
+        ui::field(ui, "Template", |ui| {
+            egui::ComboBox::from_id_salt("signature_template")
+                .width(126.)
+                .selected_text(design.template.label())
+                .show_ui(ui, |ui| {
+                    for template in SignatureTemplate::CHOICES {
+                        ui.selectable_value(&mut design.template, template, template.label());
+                    }
+                    ui.separator();
+                    ui.selectable_value(
+                        &mut design.template,
+                        SignatureTemplate::Classic,
+                        "Classic",
+                    );
+                });
+        });
+        ui::field(ui, "Language", |ui| {
+            egui::ComboBox::from_id_salt("signature_language")
+                .width(105.)
+                .selected_text(design.language.label())
+                .show_ui(ui, |ui| {
+                    for language in SignatureLanguage::CHOICES {
+                        ui.selectable_value(&mut design.language, language, language.label());
+                    }
+                });
+        });
+    });
+    let changed = design.template != previous;
+    if changed && design.template != SignatureTemplate::Classic {
+        *background = Background::Clear;
+        transform.image_overlay = false;
+        text_style.alignment = u8::from(design.template == SignatureTemplate::Ink);
+    }
+    changed
+}
+
+pub(super) fn name_field_controls(
+    ui: &mut egui::Ui,
+    design: &mut SignatureDesign,
+    name: &str,
+) -> bool {
+    if design.template != SignatureTemplate::NameFields {
+        return false;
+    }
+    let automatic = SignatureDesign::default();
+    let (given, family) = automatic.name_fields(name);
+    let first = ui::field(ui, "Given name", |ui| {
+        text_field(ui, &mut design.given_name, given, 200)
+    });
+    let last = ui::field(ui, "Family name", |ui| {
+        text_field(ui, &mut design.family_name, family, 200)
+    });
+    first.has_focus() || last.has_focus()
+}
+
 impl DigitalState {
     /// The digital ID a signature signs with, if it is available now.
     pub(super) fn signer_of(&self, signature: &SavedSignature) -> Option<&Entry> {
@@ -923,7 +1028,11 @@ impl DigitalState {
         }
         let layout = shown.layout().unwrap_or(AppearanceLayout::DetailsOnly);
         let mut request = DesktopSigningRequest {
-            rect: Some(sample_rect(layout, artwork.as_ref())),
+            rect: Some(sample_rect(
+                layout,
+                artwork.as_ref(),
+                signature.design.template,
+            )),
             name: self
                 .signer_of(signature)
                 .map_or_else(|| "Your Name".to_owned(), Entry::signer_name),
@@ -1204,6 +1313,16 @@ impl DigitalState {
             |ui| {
                 ui.spacing_mut().item_spacing.y = 6.;
                 ui.spacing_mut().slider_width = 120.;
+                if design_choices(
+                    ui,
+                    &mut signature.design,
+                    &mut signature.background,
+                    &mut signature.transform,
+                    &mut signature.text_style,
+                ) && signature.layout().is_none()
+                {
+                    signature.show_name = true;
+                }
                 egui::CollapsingHeader::new("Saved signature details")
                     .default_open(!compact)
                     .show(ui, |ui| {
@@ -1265,6 +1384,12 @@ impl DigitalState {
                                     .on_hover_text("Leave empty to use the name in your digital ID")
                                     .has_focus();
                         });
+                        let name = if signature.display_name.trim().is_empty() {
+                            &certificate
+                        } else {
+                            &signature.display_name
+                        };
+                        typing |= name_field_controls(ui, &mut signature.design, name);
                     }
                     ui.horizontal(|ui| {
                         ui.label(RichText::new("Note").color(theme::muted()));
@@ -1289,6 +1414,7 @@ impl DigitalState {
                 );
                 ui.add_enabled_ui(
                     signature.asset_id.is_some()
+                        && signature.design.template.uses_artwork()
                         && !signature.transform.image_overlay
                         && (signature.show_name
                             || signature.show_date
@@ -1303,7 +1429,7 @@ impl DigitalState {
                     },
                 )
                 .response
-                .on_hover_text("The gap applies when the image is beside the details.");
+                .on_hover_text("Space between the artwork and the signing details.");
                 egui::CollapsingHeader::new("Text appearance & position")
                     .default_open(compact)
                     .show(ui, |ui| {
@@ -1389,92 +1515,95 @@ impl DigitalState {
                         ui.label("Text edge spacing");
                         edge_spacing(ui, "text_edges", &mut style.insets);
                     });
-                egui::CollapsingHeader::new("Image artwork").default_open(!compact).show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing = vec2(8., 8.);
-                    if no_image_card(ui, signature.asset_id.is_none()) {
-                        signature.asset_id = None;
-                    }
-                    // General library artwork is only offered when explicitly requested.
-                    for asset in assets.iter().rev().filter(|a| self.is_signature_image(a)) {
-                        let selected = signature.asset_id.as_ref() == Some(&asset.id);
-                        if artwork_card(ui, editor, asset, selected) {
-                            signature.asset_id = Some(asset.id.clone());
+                if signature.design.template.uses_artwork() {
+                    egui::CollapsingHeader::new("Image artwork").default_open(!compact).show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = vec2(8., 8.);
+                        if no_image_card(ui, signature.asset_id.is_none()) {
+                            signature.asset_id = None;
                         }
-                    }
-                });
-                ui.weak("Saved signature artwork. Choose from library to use another image, stamp or drawing.");
-                ui.horizontal_wrapped(|ui| {
-                    ui.menu_button("Choose from library…", |ui| {
-                        egui::ScrollArea::vertical()
-                            .max_height(240.)
-                            .show(ui, |ui| {
-                                for asset in assets {
-                                    if ui
-                                        .selectable_label(
-                                            signature.asset_id.as_ref() == Some(&asset.id),
-                                            &asset.name,
-                                        )
-                                        .clicked()
-                                    {
-                                        signature.asset_id = Some(asset.id.clone());
-                                        ui.close();
-                                    }
-                                }
-                                if assets.is_empty() {
-                                    ui.weak("Your library is empty.");
-                                }
-                            });
+                        // General library artwork is only offered when explicitly requested.
+                        for asset in assets.iter().rev().filter(|a| self.is_signature_image(a)) {
+                            let selected = signature.asset_id.as_ref() == Some(&asset.id);
+                            if artwork_card(ui, editor, asset, selected) {
+                                signature.asset_id = Some(asset.id.clone());
+                            }
+                        }
                     });
-                    if let Some(asset) = assets
-                        .iter()
-                        .find(|a| signature.asset_id.as_ref() == Some(&a.id))
-                        && ui
-                            .add(ActionButton::new(Icon::Settings, "Manage image…"))
-                            .on_hover_text("Rename or delete this saved image in Ink signatures")
+                    ui.weak("Saved signature artwork. Choose from library to use another image, stamp or drawing.");
+                    ui.horizontal_wrapped(|ui| {
+                        ui.menu_button("Choose from library…", |ui| {
+                            egui::ScrollArea::vertical()
+                                .max_height(240.)
+                                .show(ui, |ui| {
+                                    for asset in assets {
+                                        if ui
+                                            .selectable_label(
+                                                signature.asset_id.as_ref() == Some(&asset.id),
+                                                &asset.name,
+                                            )
+                                            .clicked()
+                                        {
+                                            signature.asset_id = Some(asset.id.clone());
+                                            ui.close();
+                                        }
+                                    }
+                                    if assets.is_empty() {
+                                        ui.weak("Your library is empty.");
+                                    }
+                                });
+                        });
+                        if let Some(asset) = assets
+                            .iter()
+                            .find(|a| signature.asset_id.as_ref() == Some(&a.id))
+                            && ui
+                                .add(ActionButton::new(Icon::Settings, "Manage image…"))
+                                .on_hover_text("Rename or delete this saved image in Ink signatures")
+                                .clicked()
+                        {
+                            self.manage_signature_image(asset);
+                        }
+                        if ui
+                            .add(ActionButton::new(Icon::Pen, "Draw or type…"))
+                            .on_hover_text("Draw your handwritten signature, or type it")
                             .clicked()
-                    {
-                        self.manage_signature_image(asset);
-                    }
-                    if ui
-                        .add(ActionButton::new(Icon::Pen, "Draw or type…"))
-                        .on_hover_text("Draw your handwritten signature, or type it")
-                        .clicked()
-                    {
-                        self.manager.adopt_into = Some(id.clone());
-                        *action = Some(Action::DrawArtwork);
-                    }
-                    if ui
-                        .add(ActionButton::new(Icon::Import, "Use a picture…"))
-                        .on_hover_text(
-                            "A scan or photo of your signature, or a logo (PNG, JPEG or SVG)",
-                        )
-                        .clicked()
-                    {
-                        self.manager.adopt_into = Some(id.clone());
-                        *action = Some(Action::ImportArtwork);
-                    }
-                    if let Some(asset) = assets
-                        .iter()
-                        .find(|a| Some(&a.id) == signature.asset_id.as_ref())
-                        && matches!(
-                            asset.kind,
-                            mypdf_milestone0::annotations::Kind::Image { .. }
-                        )
-                        && ui
-                            .add(ActionButton::new(Icon::FieldImage, "Remove background…"))
+                        {
+                            self.manager.adopt_into = Some(id.clone());
+                            *action = Some(Action::DrawArtwork);
+                        }
+                        if ui
+                            .add(ActionButton::new(Icon::Import, "Use a picture…"))
+                            .on_hover_text(
+                                "A scan or photo of your signature, or a logo (PNG, JPEG or SVG)",
+                            )
                             .clicked()
-                    {
-                        *action = Some(Action::RemoveArtworkBackground(id.clone(), asset.clone()));
-                    }
+                        {
+                            self.manager.adopt_into = Some(id.clone());
+                            *action = Some(Action::ImportArtwork);
+                        }
+                        if let Some(asset) = assets
+                            .iter()
+                            .find(|a| Some(&a.id) == signature.asset_id.as_ref())
+                            && matches!(
+                                asset.kind,
+                                mypdf_milestone0::annotations::Kind::Image { .. }
+                            )
+                            && ui
+                                .add(ActionButton::new(Icon::FieldImage, "Remove background…"))
+                                .clicked()
+                        {
+                            *action = Some(Action::RemoveArtworkBackground(id.clone(), asset.clone()));
+                        }
+                    });
                 });
-            });
-                if signature.asset_id.is_some() {
+                }
+                if signature.asset_id.is_some() && signature.design.template.uses_artwork() {
                     ui::field(ui, "Image layout", |ui| {
                         ui.add_enabled_ui(
-                            signature.show_name
-                                || signature.show_date
-                                || !signature.note.trim().is_empty(),
+                            signature.design.template.artwork_beside_details()
+                                && (signature.show_name
+                                    || signature.show_date
+                                    || !signature.note.trim().is_empty()),
                             |ui| {
                                 let selected = usize::from(signature.transform.image_overlay);
                                 if let Some(index) =
@@ -1500,56 +1629,62 @@ impl DigitalState {
                         );
                     });
                 }
-                ui.add_enabled_ui(signature.asset_id.is_some(), |ui| {
-                    ui.collapsing("Image rotation & edge spacing", |ui| {
-                        ui.horizontal_wrapped(|ui| {
-                            if ui
-                                .add(ActionButton::new(Icon::RotateLeft, "−30°"))
-                                .clicked()
-                            {
-                                signature.transform.rotation =
-                                    (signature.transform.rotation + 150.).rem_euclid(360.) - 180.;
-                            }
-                            if ui
-                                .add(ActionButton::new(Icon::RotateRight, "+30°"))
-                                .clicked()
-                            {
-                                signature.transform.rotation =
-                                    (signature.transform.rotation + 210.).rem_euclid(360.) - 180.;
-                            }
-                            ui::numeric_slider(
-                                ui,
-                                egui::Slider::new(
-                                    &mut signature.transform.rotation,
-                                    -180.0..=180.0,
-                                )
-                                .show_value(false),
-                            );
-                            egui::ComboBox::from_id_salt("image_rotation_presets")
-                                .width(66.)
-                                .selected_text(format!("{:.0}°", signature.transform.rotation))
-                                .show_ui(ui, |ui| {
-                                    for angle in [
-                                        -180., -90., -45., -30., -15., 0., 15., 30., 45., 90., 180.,
-                                    ] {
-                                        ui.selectable_value(
-                                            &mut signature.transform.rotation,
-                                            angle,
-                                            format!("{angle}°"),
+                ui.add_enabled_ui(
+                    signature.asset_id.is_some() && signature.design.template.uses_artwork(),
+                    |ui| {
+                        ui.collapsing("Image rotation & edge spacing", |ui| {
+                            ui.horizontal_wrapped(|ui| {
+                                if ui
+                                    .add(ActionButton::new(Icon::RotateLeft, "−30°"))
+                                    .clicked()
+                                {
+                                    signature.transform.rotation =
+                                        (signature.transform.rotation + 150.).rem_euclid(360.)
+                                            - 180.;
+                                }
+                                if ui
+                                    .add(ActionButton::new(Icon::RotateRight, "+30°"))
+                                    .clicked()
+                                {
+                                    signature.transform.rotation =
+                                        (signature.transform.rotation + 210.).rem_euclid(360.)
+                                            - 180.;
+                                }
+                                ui::numeric_slider(
+                                    ui,
+                                    egui::Slider::new(
+                                        &mut signature.transform.rotation,
+                                        -180.0..=180.0,
+                                    )
+                                    .show_value(false),
+                                );
+                                egui::ComboBox::from_id_salt("image_rotation_presets")
+                                    .width(66.)
+                                    .selected_text(format!("{:.0}°", signature.transform.rotation))
+                                    .show_ui(ui, |ui| {
+                                        for angle in [
+                                            -180., -90., -45., -30., -15., 0., 15., 30., 45., 90.,
+                                            180.,
+                                        ] {
+                                            ui.selectable_value(
+                                                &mut signature.transform.rotation,
+                                                angle,
+                                                format!("{angle}°"),
+                                            );
+                                        }
+                                        ui.separator();
+                                        ui::numeric_value(
+                                            ui,
+                                            egui::DragValue::new(&mut signature.transform.rotation)
+                                                .range(-180. ..=180.)
+                                                .suffix("°"),
                                         );
-                                    }
-                                    ui.separator();
-                                    ui::numeric_value(
-                                        ui,
-                                        egui::DragValue::new(&mut signature.transform.rotation)
-                                            .range(-180. ..=180.)
-                                            .suffix("°"),
-                                    );
-                                });
+                                    });
+                            });
+                            edge_spacing(ui, "image_edges", &mut signature.transform.image_insets);
                         });
-                        edge_spacing(ui, "image_edges", &mut signature.transform.image_insets);
-                    });
-                });
+                    },
+                );
                 ui::field(ui, "Background", |ui| {
                     background_choices(ui, &mut signature.background);
                 });

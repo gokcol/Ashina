@@ -2,7 +2,7 @@
 
 Previously named **MyPDF** and **SkyPDF**. The Store listing uses **Ashina**; existing documents, settings and review exchange files remain compatible.
 
-**Release: 3.1.7** · macOS (Apple Silicon) and Windows (x64 and ARM64)
+**Release: 3.1.8** · macOS (Apple Silicon) and Windows (x64 and ARM64)
 
 Ashina is a native desktop PDF editor for local documents. Its main workspaces are **Read, Annotate, Edit, Draw, Forms, Sign, Pages and Export**. Contextual controls appear in the right panel; tool variations share compact menus that open on hover, click or tap.
 
@@ -117,6 +117,7 @@ Ashina is a native desktop PDF editor for local documents. Its main workspaces a
 
 - Visual signatures from handwriting, typed names or imported images, with a local reusable library.
 - Certificate-based digital signing, signature inspection and verification reporting.
+- Four digital signature templates with a live page preview and English, Turkish or German signing details.
 - Quick Sign with a chosen default identity and visual appearance.
 - Supported signing and editing workflows preserve existing signed revisions; changes may affect a signature's document-modification status.
 - Open password-protected PDFs; save protected copies or remove protection when permitted.

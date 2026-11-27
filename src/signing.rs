@@ -9,6 +9,9 @@ use underskrift::{
     },
 };
 
+mod templates;
+pub use templates::{SignatureDesign, SignatureLanguage, SignatureTemplate};
+
 #[derive(Clone, Debug, Serialize)]
 pub struct SignatureEvidence {
     pub field: String,
@@ -256,12 +259,20 @@ impl AppearanceLayout {
             _ => (120.0, 48.0),
         }
     }
+
+    pub fn minimum_size_for(self, template: SignatureTemplate) -> (f32, f32) {
+        if self != Self::ImageOnly && template == SignatureTemplate::Compact {
+            (72.0, 26.0)
+        } else {
+            self.minimum_size()
+        }
+    }
 }
 
 /// What sits behind a visible signature.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub enum Background {
-    /// Image-only appearances are clear; others are white with a thin frame.
+    /// Use the template's background.
     #[default]
     Auto,
     /// Nothing: the page shows through.
@@ -292,6 +303,18 @@ impl Background {
             Background::Tinted => "Soft tint",
             Background::Framed => "Framed",
             Background::Custom { .. } => "Custom color",
+        }
+    }
+    pub fn resolved(self, layout: AppearanceLayout, template: SignatureTemplate) -> Self {
+        match self {
+            Self::Auto
+                if layout == AppearanceLayout::ImageOnly
+                    || template != SignatureTemplate::Classic =>
+            {
+                Self::Clear
+            }
+            Self::Auto => Self::Framed,
+            chosen => chosen,
         }
     }
     /// Fill and frame colors, if any.
@@ -399,9 +422,10 @@ pub struct DesktopSigningRequest {
     pub location: String,
     pub artwork: Option<crate::assets::Asset>,
     pub layout: AppearanceLayout,
+    pub design: SignatureDesign,
     pub transform: AppearanceTransform,
     pub text_style: SignatureTextStyle,
-    /// "Digitally signed by …" with the signer's name.
+    /// The signer's name and any labels supplied by the template.
     pub show_name: bool,
     /// The signing date and time.
     pub show_date: bool,
@@ -418,6 +442,7 @@ impl Default for DesktopSigningRequest {
             location: String::new(),
             artwork: None,
             layout: AppearanceLayout::default(),
+            design: SignatureDesign::default(),
             transform: AppearanceTransform::default(),
             text_style: SignatureTextStyle::default(),
             show_name: true,
@@ -427,10 +452,20 @@ impl Default for DesktopSigningRequest {
     }
 }
 
-/// The signing time as shown in a signature, such as "2026-10-14 18:30 UTC".
-fn signing_time_label() -> String {
-    let now = time::OffsetDateTime::now_utc();
-    format!("{} {:02}:{:02} UTC", now.date(), now.hour(), now.minute())
+impl DesktopSigningRequest {
+    pub fn minimum_size(&self) -> (f32, f32) {
+        self.layout.minimum_size_for(self.design.template)
+    }
+}
+
+fn inset([x, y, r, b]: crate::annotations::Box2, edges: [f32; 4]) -> crate::annotations::Box2 {
+    let (width, height) = (r - x, b - y);
+    [
+        x + width * edges[0] / 100.,
+        y + height * edges[1] / 100.,
+        r - width * edges[2] / 100.,
+        b - height * edges[3] / 100.,
+    ]
 }
 
 /// Preview pixels and their bounds relative to the originally drawn box.
@@ -467,7 +502,7 @@ pub fn signature_appearance(request: &DesktopSigningRequest) -> Result<Signature
         .rect
         .context("An invisible signature has no appearance")?;
     let (w, h) = (rect[2] - rect[0], rect[3] - rect[1]);
-    let (min_w, min_h) = request.layout.minimum_size();
+    let (min_w, min_h) = request.minimum_size();
     ensure!(
         w.is_finite()
             && h.is_finite()
@@ -476,7 +511,11 @@ pub fn signature_appearance(request: &DesktopSigningRequest) -> Result<Signature
         "Draw a signature rectangle at least {min_w} × {min_h} points, up to 1500 × 600"
     );
     ensure!(
-        request.name.len() <= 200 && request.reason.len() <= 1000 && request.location.len() <= 300,
+        request.name.len() <= 200
+            && request.reason.len() <= 1000
+            && request.location.len() <= 300
+            && request.design.given_name.chars().count() <= 200
+            && request.design.family_name.chars().count() <= 200,
         "Signature appearance details are too long"
     );
     ensure!(
@@ -585,11 +624,9 @@ pub fn signature_appearance(request: &DesktopSigningRequest) -> Result<Signature
             }
             fit_text(&base, mark)
         };
-    let background = match request.background {
-        Background::Auto if request.layout == AppearanceLayout::ImageOnly => Background::Clear,
-        Background::Auto => Background::Framed,
-        chosen => chosen,
-    };
+    let background = request
+        .background
+        .resolved(request.layout, request.design.template);
     let transparent = background == Background::Clear;
     let backdrop: Vec<Annotation> = background
         .colors()
@@ -703,55 +740,15 @@ pub fn signature_appearance(request: &DesktopSigningRequest) -> Result<Signature
         })
     };
     let padding = request.transform.outer_padding.map(|p| p * k);
-    let mut lines = vec![];
-    if request.layout != AppearanceLayout::ImageOnly {
-        if request.show_name {
-            lines.push(format!(
-                "Digitally signed by {}",
-                if request.name.trim().is_empty() {
-                    "certificate holder"
-                } else {
-                    request.name.trim()
-                }
-            ));
-        }
-        if request.show_date {
-            lines.push(signing_time_label());
-        }
-        for extra in [&request.reason, &request.location] {
-            if !extra.trim().is_empty() {
-                lines.push(extra.trim().to_owned());
-            }
-        }
-    }
-    let inset = |[x, y, r, b]: [f32; 4], edges: [f32; 4]| {
-        let (width, height) = (r - x, b - y);
-        [
-            x + width * edges[0] / 100.,
-            y + height * edges[1] / 100.,
-            r - width * edges[2] / 100.,
-            b - height * edges[3] / 100.,
-        ]
-    };
-    // With no details to show, the image fills the box on its own.
-    if request.layout == AppearanceLayout::ImageOnly || lines.is_empty() {
-        let artwork = request
-            .artwork
-            .as_ref()
-            .context("Choose what the signature shows: your name, the date, a note or an image")?;
+    let now = time::OffsetDateTime::now_utc();
+    let artwork = request.artwork.as_ref().filter(|_| {
+        request.layout != AppearanceLayout::DetailsOnly
+            && (request.layout == AppearanceLayout::ImageOnly
+                || request.design.template.uses_artwork())
+    });
+    let place_artwork = |artwork: &crate::assets::Asset, area, font_padding| {
         artwork.validate()?;
-        if request.transform.image_opacity == 0. {
-            return render(vec![], transparent);
-        }
-        let [left, top, right, bottom] = inset(
-            [
-                padding.unwrap_or(2.),
-                padding.unwrap_or(2.),
-                w - padding.unwrap_or(2.),
-                h - padding.unwrap_or(2.),
-            ],
-            request.transform.image_insets,
-        );
+        let [left, top, right, bottom] = inset(area, request.transform.image_insets);
         let (available_w, available_h) = (right - left, bottom - top);
         let aw = available_w.min(available_h * artwork.aspect);
         let ah = aw / artwork.aspect;
@@ -765,22 +762,65 @@ pub fn signature_appearance(request: &DesktopSigningRequest) -> Result<Signature
             style.opacity = style.opacity.max(0.01);
         }
         if matches!(artwork.kind, Kind::Text { .. } | Kind::Stamp { .. }) {
-            style.font_size = style.font_size.min((ah - 4.0) / 1.25).max(1.0);
+            style.font_size = style.font_size.min((ah - font_padding) / 1.25).max(1.);
         }
-        let marks = vec![rotate_image(
+        rotate_image(
             Annotation::new(0, [x, y, x + aw, y + ah], artwork.kind.clone(), style),
             available_w,
             available_h,
-        )?];
+        )
+    };
+    let has_details = request.show_name
+        || request.show_date
+        || !request.reason.trim().is_empty()
+        || !request.location.trim().is_empty();
+    // With no details to show, the image fills the box on its own.
+    if request.layout == AppearanceLayout::ImageOnly || !has_details {
+        let artwork = artwork
+            .context("Choose what the signature shows: your name, the date, a note or an image")?;
+        if request.transform.image_opacity == 0. {
+            artwork.validate()?;
+            return render(vec![], transparent);
+        }
+        let p = padding.unwrap_or(2.);
+        return render(
+            vec![place_artwork(artwork, [p, p, w - p, h - p], 4.)?],
+            transparent,
+        );
+    }
+    let artwork = artwork.filter(|_| request.transform.image_opacity > 0.);
+    if request.design.template != SignatureTemplate::Classic {
+        let marks = templates::compose(request, [w, h], k, artwork, place_artwork, now)?;
         return render(marks, transparent);
     }
+
+    let language = request.design.language;
+    let mut lines = vec![];
+    if request.show_name {
+        let name = request.name.trim();
+        lines.push(language.classic_heading(if name.is_empty() {
+            language.certificate_holder()
+        } else {
+            name
+        }));
+    }
+    if request.show_date {
+        lines.push(if language == SignatureLanguage::English {
+            format!("{} {:02}:{:02} UTC", now.date(), now.hour(), now.minute())
+        } else {
+            language.date(now)
+        });
+    }
+    lines.extend(
+        [&request.reason, &request.location]
+            .into_iter()
+            .map(|extra| extra.trim())
+            .filter(|extra| !extra.is_empty())
+            .map(str::to_owned),
+    );
     let mut annotations = vec![];
-    let artwork = request.artwork.as_ref().filter(|_| {
-        request.layout == AppearanceLayout::ImageAndDetails && request.transform.image_opacity > 0.
-    });
     let mut overlay = None;
     let left = if let Some(artwork) = artwork {
-        artwork.validate()?;
         let p = padding.unwrap_or(8.);
         let custom_spacing = padding.is_some() || request.transform.image_text_gap.is_some();
         let gap = request
@@ -795,26 +835,7 @@ pub fn signature_appearance(request: &DesktopSigningRequest) -> Result<Signature
         } else {
             w * 0.34
         };
-        let [left, top, right, bottom] =
-            inset([p, p, image_right, h - p], request.transform.image_insets);
-        let (available_w, available_h) = (right - left, bottom - top);
-        let aw = available_w.min(available_h * artwork.aspect);
-        let ah = aw / artwork.aspect;
-        let x = left + (available_w - aw) / 2.;
-        let y = top + (available_h - ah) / 2.;
-        let mut style = artwork.style.clone();
-        style.opacity *= request.transform.image_opacity;
-        if !matches!(artwork.kind, Kind::Image { .. }) {
-            style.opacity = style.opacity.max(0.01);
-        }
-        if matches!(artwork.kind, Kind::Text { .. } | Kind::Stamp { .. }) {
-            style.font_size = style.font_size.min((ah - 8.0) / 1.25).max(1.0);
-        }
-        let image = rotate_image(
-            Annotation::new(0, [x, y, x + aw, y + ah], artwork.kind.clone(), style),
-            available_w,
-            available_h,
-        )?;
+        let image = place_artwork(artwork, [p, p, image_right, h - p], 8.)?;
         if request.transform.image_overlay {
             overlay = Some(image);
             p

@@ -2,7 +2,10 @@ use super::*;
 use anyhow::Context as _;
 use mypdf_milestone0::{
     identity::{self, IdentityInfo, PersonalId},
-    signing::{self, AppearanceLayout, DesktopSigningRequest, SignatureEvidence},
+    signing::{
+        self, AppearanceLayout, DesktopSigningRequest, SignatureDesign, SignatureEvidence,
+        SignatureTemplate,
+    },
     write_new,
 };
 use serde::{Deserialize, Serialize};
@@ -430,6 +433,7 @@ impl DigitalState {
                 asset_id: appearance.asset_id.clone(),
                 show_name: !image_only,
                 show_date: !image_only,
+                design: SignatureDesign::classic(),
                 background: if image_only {
                     signing::Background::Clear
                 } else {
@@ -1338,7 +1342,6 @@ impl Viewer {
                 .as_ref()
                 .and_then(|id| assets.iter().find(|a| &a.id == id))
                 .cloned();
-            request.layout = self.digital.layout;
             self.digital.look.apply(&mut request);
             request
         };
@@ -1884,6 +1887,26 @@ impl Viewer {
                                 );
                                 return;
                             }
+                            let look = &mut self.digital.look;
+                            if manager::design_choices(
+                                ui,
+                                &mut look.design,
+                                &mut look.background,
+                                &mut look.transform,
+                                &mut look.text_style,
+                            ) && !look.design.template.uses_artwork()
+                            {
+                                look.show_name = true;
+                            }
+                            if look.show_name {
+                                let name = if look.display_name.trim().is_empty() {
+                                    &self.digital.request.name
+                                } else {
+                                    &look.display_name
+                                };
+                                self.editor.text_editing |=
+                                    manager::name_field_controls(ui, &mut look.design, name);
+                            }
                             let mut request = self.digital.request.clone();
                             request.artwork = self
                                 .digital
@@ -1891,7 +1914,6 @@ impl Viewer {
                                 .as_ref()
                                 .and_then(|id| assets.iter().find(|a| &a.id == id))
                                 .cloned();
-                            request.layout = self.digital.layout;
                             self.digital.look.apply(&mut request);
                             if let Some([l, t, r, b]) = request.rect {
                                 let preview = self.digital.manager.preview_for(ui.ctx(), "placed_signature", &request);
@@ -1914,7 +1936,8 @@ impl Viewer {
                                             ui,
                                             rect,
                                             preview.as_ref(),
-                                            self.digital.look.background == signing::Background::Clear,
+                                            request.background.resolved(request.layout, request.design.template)
+                                                == signing::Background::Clear,
                                         );
                                     }
                                 }
@@ -2332,16 +2355,26 @@ impl Viewer {
     /// Size a placed box for the current layout. A click becomes a default-size box
     /// centered on the click; a small drag grows to the layout's minimum.
     fn fit_signature_box(&self, tab: u64, page: usize, rect: [f32; 4]) -> [f32; 4] {
-        let (min_w, min_h) = self.digital.layout.minimum_size();
+        let template = self.digital.look.design.template;
+        let layout = if template.uses_artwork() {
+            self.digital.layout
+        } else {
+            AppearanceLayout::DetailsOnly
+        };
+        let (min_w, min_h) = layout.minimum_size_for(template);
         let (w, h) = (rect[2] - rect[0], rect[3] - rect[1]);
         let click = w < 8. && h < 8.;
         let (mut w, mut h) = if click {
-            match self.digital.layout {
+            match layout {
                 AppearanceLayout::ImageOnly => {
                     let aspect = self.signature_artwork().map_or(3., |a| a.aspect);
                     (160., (160. / aspect).clamp(min_h, 120.))
                 }
-                _ => (240., 72.),
+                _ => match template {
+                    SignatureTemplate::Compact => (150., 42.),
+                    SignatureTemplate::Ink => (210., 92.),
+                    _ => (240., 72.),
+                },
             }
         } else {
             (w.max(min_w), h.max(min_h))
@@ -2425,7 +2458,6 @@ impl Viewer {
             request.rect = None;
         }
         request.artwork = self.signature_artwork();
-        request.layout = self.digital.layout;
         self.digital.look.apply(&mut request);
         let password = std::mem::take(&mut self.digital.sign_password);
         self.status = Some(("Signing…".into(), false));
@@ -4159,7 +4191,11 @@ mod tests {
         let original = wait_preview(&mut app, None);
         app.digital.signatures[0].text_style.insets = [10., 20., 5., 5.];
         app.digital.signatures[0].text_style.color = [0.8, 0.1, 0.2];
-        wait_preview(&mut app, Some(original));
+        let custom = wait_preview(&mut app, Some(original));
+        app.digital.signatures[0].design.language = signing::SignatureLanguage::German;
+        let localized = wait_preview(&mut app, Some(custom));
+        app.digital.signatures[0].design.template = SignatureTemplate::NameFields;
+        wait_preview(&mut app, Some(localized));
         // The dock leaves the PDF a separate canvas; its pinned actions remain reachable.
         for size in [vec2(1280., 900.), vec2(900., 650.)] {
             for _ in 0..4 {
@@ -4315,6 +4351,7 @@ mod tests {
         assert_eq!(first.identity, Some(entry.reference()));
         assert_eq!(first.asset_id.as_deref(), Some("ink-1"));
         assert!(!first.show_name && !first.show_date);
+        assert_eq!(first.design.template, SignatureTemplate::Classic);
         assert_eq!(first.background, signing::Background::Clear);
         assert_eq!(state.layout, AppearanceLayout::ImageOnly);
         assert_eq!(
@@ -4329,6 +4366,12 @@ mod tests {
         let added = state.signature(&second).unwrap();
         assert_eq!(added.identity, Some(entry.reference()));
         assert_eq!(added.name, "My signature");
+        assert_eq!(added.design.template, SignatureTemplate::CleanSplit);
+        let old_saved: SavedSignature =
+            serde_json::from_str(r#"{"name":"Previous design"}"#).unwrap();
+        assert_eq!(old_saved.design.template, SignatureTemplate::Classic);
+        state.signatures[1].design.template = SignatureTemplate::Ink;
+        state.signatures[1].design.language = signing::SignatureLanguage::Turkish;
         state.make_default(&second);
         assert!(state.look.show_name && state.layout == AppearanceLayout::DetailsOnly);
 
@@ -4336,6 +4379,11 @@ mod tests {
         assert_eq!(state.signatures.len(), 2);
         assert_eq!(state.signatures[0].name, "Handwritten");
         assert_eq!(state.default_signature.as_deref(), Some(second.as_str()));
+        assert_eq!(state.look.design.template, SignatureTemplate::Ink);
+        assert_eq!(
+            state.look.design.language,
+            signing::SignatureLanguage::Turkish
+        );
         // Deleting the Quick Sign signature hands Quick Sign to the next one.
         state.delete_signature(&second);
         assert_eq!(state.default_signature.as_deref(), Some(first.id.as_str()));
