@@ -1919,18 +1919,7 @@ pub fn remove(bytes: &[u8], field: ObjectId, widget: Option<ObjectId>) -> Result
         Some(w) if all.len() > 1 && all.contains(&w) => vec![w],
         _ => all.clone(),
     };
-    let (pages, _) = page_map(&doc);
-    for page in pages {
-        let list = annots(&doc, page);
-        let kept: Vec<Object> = list
-            .iter()
-            .filter(|a| a.as_reference().is_ok_and(|id| !gone.contains(&id)))
-            .cloned()
-            .collect();
-        if kept.len() != list.len() {
-            set_annots(&mut doc, page, kept)?;
-        }
-    }
+    detach_widgets(&mut doc, &gone)?;
     if gone.len() < all.len() {
         // One radio button of a group.
         let kids: Vec<Object> = doc
@@ -1958,6 +1947,32 @@ pub fn remove(bytes: &[u8], field: ObjectId, widget: Option<ObjectId>) -> Result
     detach(&mut doc, field)?;
     content::serialize(&mut doc)
 }
+
+fn detach_widgets(doc: &mut Document, widgets: &[ObjectId]) -> Result<()> {
+    for page in doc.get_pages().into_values() {
+        let mut list = annots(doc, page);
+        let count = list.len();
+        list.retain(|a| {
+            a.as_reference()
+                .ok()
+                .is_none_or(|id| !widgets.contains(&id))
+        });
+        if list.len() != count {
+            set_annots(doc, page, list)?;
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn detach_field(
+    doc: &mut Document,
+    field: ObjectId,
+    widgets: &[ObjectId],
+) -> Result<()> {
+    detach_widgets(doc, widgets)?;
+    detach(doc, field)
+}
+
 /// Remove a field from its parent or the AcroForm, removing parents left empty.
 fn detach(doc: &mut Document, field: ObjectId) -> Result<()> {
     let parent = doc

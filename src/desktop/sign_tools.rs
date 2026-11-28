@@ -64,7 +64,7 @@ impl State {
                 changed |= ui.radio_value(choice, true, if ink { "Use my default ink signature" } else { "Use my default digital signature" }).changed();
                 changed |= ui.radio_value(choice, false, if ink { "Choose a signature each time" } else { "Review options after drawing" }).changed();
             });
-            ui.weak(if ink { "Choose the default with Make default below. You always place the signature yourself." } else { "Star a signature below to make it the default. Quick Sign always waits for you to draw its region." });
+            ui.weak(if ink { "Choose the default with Make default below. You always place the signature yourself." } else { "Select a signature below and choose Use for Quick Sign." });
             if changed { self.save_signing(); }
             if let Some(error) = &self.preference_error {
                 ui.colored_label(theme::danger(), error);

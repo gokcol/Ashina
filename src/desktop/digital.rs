@@ -1382,6 +1382,10 @@ impl Viewer {
             .as_ref()
             .map(|l| l.entries.clone())
             .unwrap_or_default();
+        let show_touch = touch_tools::controls_available(ctx);
+        if self.digital.panel == Panel::Touch && !show_touch {
+            self.digital.panel = Panel::Interface;
+        }
         let settings = !matches!(self.digital.panel, Panel::Sign | Panel::Validate);
         let docked = self.digital_docked();
         let mut body = |ui: &mut egui::Ui| {
@@ -1443,31 +1447,27 @@ impl Viewer {
                         ui.ctx()
                             .data_mut(|d| d.insert_temp(remembered, self.digital.panel));
                     }
-                    let section = match self.digital.panel {
-                        Panel::Interface => 1,
-                        Panel::Touch => 2,
-                        Panel::Styles => 3,
-                        _ => 0,
-                    };
-                    if let Some(i) = ui::settings_tabs(
-                        ui,
-                        &[
-                            (Icon::Sign, "Signatures"),
-                            (Icon::Theme, "Appearance"),
-                            (Icon::Touch, "Touch"),
-                            (Icon::Library, "Reusable styles"),
-                        ],
-                        section,
-                        false,
-                    ) {
-                        self.digital.panel = match i {
-                            1 => Panel::Interface,
-                            2 => Panel::Touch,
-                            3 => Panel::Styles,
-                            _ => ui
-                                .ctx()
+                    let sections = [
+                        (Panel::Ink, (Icon::Sign, "Signatures")),
+                        (Panel::Interface, (Icon::Theme, "Appearance")),
+                        (Panel::Touch, (Icon::Touch, "Touch")),
+                        (Panel::Styles, (Icon::Library, "Reusable styles")),
+                    ];
+                    let (panels, tabs): (Vec<_>, Vec<_>) = sections
+                        .into_iter()
+                        .filter(|(panel, _)| show_touch || *panel != Panel::Touch)
+                        .unzip();
+                    let section = panels
+                        .iter()
+                        .position(|p| *p == self.digital.panel)
+                        .unwrap_or(0);
+                    if let Some(i) = ui::settings_tabs(ui, &tabs, section, false) {
+                        self.digital.panel = if i == 0 {
+                            ui.ctx()
                                 .data(|d| d.get_temp::<Panel>(remembered))
-                                .unwrap_or(Panel::Ink),
+                                .unwrap_or(Panel::Ink)
+                        } else {
+                            panels[i]
                         };
                     }
                     if !matches!(
@@ -1586,6 +1586,10 @@ impl Viewer {
                 }
                 ui.add_enabled_ui(!self.digital.busy, |ui| match self.digital.panel {
                     Panel::Interface => {
+                        if !show_touch {
+                            touch_tools::input_mode_settings(ui);
+                            ui.add_space(8.);
+                        }
                         ui::appearance_settings(ui);
                         ui.add_space(8.);
                         ui::settings_group(ui, Icon::Reload, "App updates", |ui| {

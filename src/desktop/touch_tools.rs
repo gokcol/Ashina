@@ -158,7 +158,11 @@ pub(super) fn observe(ctx: &egui::Context) {
     let mut current = state(ctx);
     let time = ctx.input(|i| i.time);
     if time >= current.next_probe {
-        current.hardware_touch = touchscreen_hardware();
+        let detected = touchscreen_hardware();
+        if current.hardware_touch && !detected {
+            current.seen_touch = false;
+        }
+        current.hardware_touch = detected;
         current.next_probe = time + 2.;
     }
     // Trackpads produce wheel/gesture events; only direct Touch identifies a screen.
@@ -410,29 +414,44 @@ fn preference_control(ui: &mut egui::Ui, drawing: bool, global: bool, section: P
         }
     }
 }
-pub(super) fn settings(ui: &mut egui::Ui) {
+pub(super) fn input_mode_settings(ui: &mut egui::Ui) {
     let current = state(ui.ctx());
-    ui::settings_group(ui, Icon::Touch, "Input mode", |ui| {
-        let index = match current.preferences.mode {
-            InputMode::Automatic => 0,
-            InputMode::Touch => 1,
-            InputMode::Mouse => 2,
-        };
-        if let Some(i) = ui::segmented(ui, &["Automatic", "Touch", "Mouse only"], index) {
-            update_preferences(ui.ctx(), |p| {
-                p.mode = [InputMode::Automatic, InputMode::Touch, InputMode::Mouse][i]
+    let choices = [
+        (InputMode::Automatic, "Automatic"),
+        (InputMode::Touch, "Touch"),
+        (InputMode::Mouse, "Mouse only"),
+    ];
+    let mut selected = current.preferences.mode;
+    ui::settings_group(ui, Icon::Select, "Input mode", |ui| {
+        let label = choices
+            .iter()
+            .find(|(mode, _)| *mode == selected)
+            .unwrap()
+            .1;
+        egui::ComboBox::from_id_salt("input_mode")
+            .selected_text(label)
+            .show_ui(ui, |ui| {
+                for (mode, label) in choices {
+                    ui.selectable_value(&mut selected, mode, label);
+                }
             });
+        if selected != current.preferences.mode {
+            update_preferences(ui.ctx(), |p| p.mode = selected);
         }
-        ui.label(RichText::new(match state(ui.ctx()).preferences.mode {
-            InputMode::Automatic if current.hardware_touch||current.seen_touch=>"Touchscreen detected. Touch controls are available.",
-            InputMode::Automatic=>"Touch controls appear when a touchscreen is detected or used.",
-            InputMode::Touch=>"Always show touch controls, including on devices that report no touchscreen.",
-            InputMode::Mouse=>"Hide touch controls and disable finger drawing. Mouse and trackpad navigation stay available.",
-        }).small().color(theme::muted()));
+        let updated = state(ui.ctx());
+        if !available(&updated)
+            && let Some(error) = updated.error
+        {
+            ui.colored_label(theme::danger(), error);
+        }
     });
-    ui.add_enabled_ui(state(ui.ctx()).preferences.mode != InputMode::Mouse, |ui| {
-        preference_controls(ui, false, true)
-    });
+}
+
+pub(super) fn settings(ui: &mut egui::Ui) {
+    input_mode_settings(ui);
+    if controls_available(ui.ctx()) {
+        preference_controls(ui, false, true);
+    }
 }
 impl Viewer {
     pub(super) fn touch_settings_button(&mut self, ui: &mut egui::Ui) {
@@ -757,6 +776,59 @@ mod tests {
         });
         assert!(!controls_available(&ctx) && !draw_with_finger(&ctx));
         theme::set_touch_target(0.);
+    }
+
+    #[test]
+    fn settings_hide_touch_until_detected_or_manually_enabled() {
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let mut app = Viewer::new(&eframe::CreationContext::_new_kittest(ctx.clone()), vec![]);
+        app.digital.open = true;
+        app.digital.panel = digital::Panel::Interface;
+        let frame = |app: &mut Viewer| {
+            let mut labels = HashSet::new();
+            for _ in 0..5 {
+                let output = ctx.run(
+                    egui::RawInput {
+                        screen_rect: Some(Rect::from_min_size(pos2(0., 0.), vec2(1100., 900.))),
+                        ..Default::default()
+                    },
+                    |ctx| app.digital_window(ctx),
+                );
+                labels = output
+                    .platform_output
+                    .accesskit_update
+                    .unwrap()
+                    .nodes
+                    .into_iter()
+                    .filter_map(|(_, node)| {
+                        node.label().or_else(|| node.value()).map(str::to_owned)
+                    })
+                    .collect();
+            }
+            labels
+        };
+        let labels = frame(&mut app);
+        assert!(!labels.contains("Touch"));
+        assert!(labels.contains("Input mode"));
+
+        let mut detected = state(&ctx);
+        detected.hardware_touch = true;
+        ctx.data_mut(|data| data.insert_temp(id(), detected));
+        app.digital.panel = digital::Panel::Touch;
+        let labels = frame(&mut app);
+        assert!(labels.contains("Touch") && labels.contains("Draw with finger"));
+
+        update_preferences(&ctx, |p| p.mode = InputMode::Mouse);
+        let labels = frame(&mut app);
+        assert!(app.digital.panel == digital::Panel::Interface);
+        assert!(!labels.contains("Touch") && labels.contains("Input mode"));
+
+        let mut manual = state(&ctx);
+        manual.hardware_touch = false;
+        manual.preferences.mode = InputMode::Touch;
+        ctx.data_mut(|data| data.insert_temp(id(), manual));
+        assert!(frame(&mut app).contains("Touch"));
     }
     #[test]
     fn touch_targets_restore_the_existing_mouse_density() {

@@ -820,7 +820,7 @@ impl Viewer {
                 ctx,
                 "remove_signature",
                 &format!("Remove the signature “{field}”?"),
-                "The signature is cleared from its field, which can be signed again. Other signatures stay valid. Save writes a new PDF; your original file stays unchanged.",
+                "The box for a signature placed on the page is removed with it. An existing form field can be signed again. Save keeps earlier revisions and preserves other signatures.",
                 &[
                     ("Keep Signature", ui::DialogTone::Primary),
                     ("Remove Signature", ui::DialogTone::Destructive),

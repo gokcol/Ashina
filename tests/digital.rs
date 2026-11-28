@@ -397,10 +397,10 @@ async fn signed_pdfs_edit_incrementally_and_signatures_can_be_removed() {
         signed
     );
 
-    // Removing one signature keeps the other valid and leaves an empty field.
+    // Removing the placed signature removes its form widget and keeps the other signature valid.
     let second = signing::DesktopSigningRequest {
         field: "Second".into(),
-        rect: None,
+        rect: Some([60., 180., 300., 260.]),
         ..Default::default()
     };
     let twice = signing::sign_custom(&saved, &signer, &second)
@@ -416,7 +416,25 @@ async fn signed_pdfs_edit_incrementally_and_signatures_can_be_removed() {
             .any(|s| s.field == "Second" && s.crypto_valid && s.digest_matches)
     );
     let fields = signature_edit::signature_fields(&removed).unwrap();
-    assert!(fields.iter().any(|f| f.name == "First" && !f.signed));
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].name, "Second");
+    let old_widget = mypdf_milestone0::forms::fields(&twice)
+        .unwrap()
+        .into_iter()
+        .find(|f| f.name == "First")
+        .unwrap()
+        .widgets[0]
+        .id;
+    let doc = lopdf::Document::load_mem(&removed).unwrap();
+    let page = doc.get_dictionary(doc.get_pages()[&1]).unwrap();
+    let (_, annots) = doc.dereference(page.get(b"Annots").unwrap()).unwrap();
+    assert!(
+        !annots
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a.as_reference().ok() == Some(old_widget))
+    );
 
     // A removal is an ordinary, undoable edit: later edits rewrite the file, and
     // saving appends both over the signed original.
@@ -424,6 +442,12 @@ async fn signed_pdfs_edit_incrementally_and_signatures_can_be_removed() {
     let rewritten = edit(&removed).unwrap();
     let saved = signature_edit::incremental_update(&twice, &rewritten).unwrap();
     assert!(saved.starts_with(&twice));
+    assert!(
+        mypdf_milestone0::forms::fields(&saved)
+            .unwrap()
+            .iter()
+            .all(|f| f.name != "First")
+    );
     let report = signing::verify(&saved, None).unwrap();
     assert!(report.iter().all(|s| s.field != "First"));
     assert!(
@@ -1040,7 +1064,7 @@ fn signature_text_shrinks_to_fit_the_smallest_box() {
 
 #[tokio::test]
 async fn a_form_signature_field_is_signed_in_place() {
-    use mypdf_milestone0::{convert, form_design, forms};
+    use mypdf_milestone0::{convert, form_design, forms, signature_edit};
     let signer = identity::FileSigner::load(&id().pkcs12, PASSWORD, None).unwrap();
     let blank = convert::blank(595., 842.).unwrap();
     let mut properties =
@@ -1086,6 +1110,79 @@ async fn a_form_signature_field_is_signed_in_place() {
         signing::sign_custom(&signed, &signer, &request)
             .await
             .is_err()
+    );
+    let cleared = signature_edit::remove_signature(&signed, &request.field).unwrap();
+    assert!(cleared.starts_with(&signed));
+    assert!(signing::verify(&cleared, None).unwrap().is_empty());
+    assert_eq!(
+        signing::empty_signature_field(&cleared, &request.field),
+        Some(field)
+    );
+    let signed_again = signing::sign_custom(&cleared, &signer, &request)
+        .await
+        .unwrap();
+    assert!(signing::verify(&signed_again, None).unwrap()[0].crypto_valid);
+}
+
+#[tokio::test]
+async fn older_generated_signature_boxes_are_removed_from_forms() {
+    use mypdf_milestone0::{content, convert, form_design, forms, signature_edit};
+    let signer = identity::FileSigner::load(&id().pkcs12, PASSWORD, None).unwrap();
+    let blank = convert::blank(595., 842.).unwrap();
+    let prepared_name = "MyPDF_01234567";
+    let properties = form_design::Properties::new(form_design::FieldType::Signature, prepared_name);
+    let (form, prepared_field) = form_design::add(
+        &blank,
+        0,
+        [300., 600., 500., 660.],
+        form_design::FieldType::Signature,
+        &properties,
+    )
+    .unwrap();
+    let prepared = signing::DesktopSigningRequest {
+        field: prepared_name.into(),
+        rect: Some([300., 600., 500., 660.]),
+        ..Default::default()
+    };
+    let signed = signing::sign_custom(&form, &signer, &prepared)
+        .await
+        .unwrap();
+    let placed = signing::DesktopSigningRequest {
+        field: "MyPDF_89abcdef".into(),
+        rect: Some([40., 60., 280., 120.]),
+        ..Default::default()
+    };
+    let twice = signing::sign_custom(&signed, &signer, &placed)
+        .await
+        .unwrap();
+    let mut legacy_doc = lopdf::Document::load_mem(&twice).unwrap();
+    let placed_id = forms::fields(&twice)
+        .unwrap()
+        .into_iter()
+        .find(|f| f.name == placed.field)
+        .unwrap()
+        .id;
+    assert!(
+        legacy_doc
+            .get_dictionary_mut(placed_id)
+            .unwrap()
+            .remove(b"AshinaPlacedSignature")
+            .is_some()
+    );
+    let legacy =
+        signature_edit::incremental_update(&twice, &content::serialize(&mut legacy_doc).unwrap())
+            .unwrap();
+    let removed = signature_edit::remove_signature(&legacy, &placed.field).unwrap();
+    assert!(removed.starts_with(&legacy));
+    let fields = forms::fields(&removed).unwrap();
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].id, prepared_field);
+    assert!(signing::verify(&removed, None).unwrap()[0].crypto_valid);
+
+    let cleared = signature_edit::remove_signature(&removed, prepared_name).unwrap();
+    assert_eq!(
+        signing::empty_signature_field(&cleared, prepared_name),
+        Some(prepared_field)
     );
 }
 

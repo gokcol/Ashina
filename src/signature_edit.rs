@@ -11,6 +11,8 @@ use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
 
+const REMOVED_SIGNATURES: &str = "AshinaRemovedSignatures";
+
 fn registry() -> &'static Mutex<HashSet<[u8; 32]>> {
     static UNLOCKED: OnceLock<Mutex<HashSet<[u8; 32]>>> = OnceLock::new();
     UNLOCKED.get_or_init(Default::default)
@@ -70,6 +72,10 @@ fn container(object: &Object) -> bool {
 pub fn incremental_update(original: &[u8], edited: &[u8]) -> Result<Vec<u8>> {
     let prev = Document::load_mem(original)?;
     let next = Document::load_mem(edited)?;
+    append_changes(original, &prev, &next)
+}
+
+fn append_changes(original: &[u8], prev: &Document, next: &Document) -> Result<Vec<u8>> {
     ensure!(!prev.is_encrypted(), "Encrypted PDFs cannot be edited");
     let mut update = IncrementalDocument::create_from(original.to_vec(), prev.clone());
     let mut changed = 0;
@@ -92,13 +98,18 @@ pub fn incremental_update(original: &[u8], edited: &[u8]) -> Result<Vec<u8>> {
     let mut output = vec![];
     update.save_to(&mut output)?;
     ensure!(output.starts_with(original), "The signed bytes changed");
-    verify_preserved(original, &output)?;
+    verify_preserved(original, &output, prev, next)?;
     Ok(output)
 }
 
 /// Every signature that verified before still verifies for its revision,
-/// unless the update deliberately cleared its field (see [`remove_signature`]).
-fn verify_preserved(original: &[u8], output: &[u8]) -> Result<()> {
+/// unless the update deliberately cleared its field or detached its placed widget.
+fn verify_preserved(
+    original: &[u8],
+    output: &[u8],
+    prev: &Document,
+    next: &Document,
+) -> Result<()> {
     let ok = |bytes: &[u8]| -> Result<HashSet<String>> {
         Ok(crate::signing::verify(bytes, None)?
             .into_iter()
@@ -106,11 +117,24 @@ fn verify_preserved(original: &[u8], output: &[u8]) -> Result<()> {
             .map(|s| s.field)
             .collect())
     };
-    let cleared: HashSet<String> = signature_fields(output)?
+    let removed = removal_records(next)
+        .iter()
+        .filter_map(|record| record.as_reference().ok())
+        .filter(|id| matches!(next.objects.get(id), Some(Object::Null)))
+        .collect::<HashSet<_>>();
+    let mut cleared: HashSet<String> = signature_widgets(next)
         .into_iter()
-        .filter(|f| !f.signed)
-        .map(|f| f.name)
+        .filter(|(_, field, _)| !field.has(b"V"))
+        .map(|(_, field, _)| field_name(&field))
         .collect();
+    cleared.extend(
+        signature_widgets(prev)
+            .into_iter()
+            .filter_map(|(_, field, _)| {
+                let id = field.get(b"V").ok()?.as_reference().ok()?;
+                removed.contains(&id).then(|| field_name(&field))
+            }),
+    );
     let before = ok(original)?;
     let after = ok(output)?;
     ensure!(
@@ -118,6 +142,16 @@ fn verify_preserved(original: &[u8], output: &[u8]) -> Result<()> {
         "The update would invalidate an existing signature"
     );
     Ok(())
+}
+
+// Referenced null objects survive ordinary document edits that prune unused objects.
+// This lets a later save distinguish deliberate removals from dropped signatures.
+fn removal_records(doc: &Document) -> &[Object] {
+    doc.catalog()
+        .and_then(|catalog| catalog.get(REMOVED_SIGNATURES.as_bytes()))
+        .and_then(|records| doc.dereference(records))
+        .and_then(|(_, records)| records.as_array())
+        .map_or(&[], Vec::as_slice)
 }
 
 /// A signature form field and where its widget sits on the page.
@@ -275,8 +309,27 @@ pub fn signed_revision(bytes: &[u8], field: &str) -> Result<Vec<u8>> {
     Ok(bytes[..end].to_vec())
 }
 
-/// Clear a signature from its field, as an incremental update. Other signatures
-/// keep verifying; the field becomes an empty signature field that can be signed again.
+/// A signature placed by Ashina owns its widget. Earlier versions can be
+/// recognized by their generated name and by allocating the widget after the
+/// signature object. Signing an existing form uses its earlier widget ID.
+fn placed_widget(field: &Dictionary, field_id: ObjectId, sig_id: ObjectId) -> bool {
+    if field.has(b"Parent") || field.has(b"Kids") {
+        return false;
+    }
+    field
+        .get(b"AshinaPlacedSignature")
+        .and_then(Object::as_bool)
+        .is_ok_and(|placed| placed)
+        || (field_id.0 > sig_id.0
+            && field_name(field)
+                .strip_prefix("MyPDF_")
+                .is_some_and(|suffix| {
+                    suffix.len() == 8 && suffix.bytes().all(|b| b.is_ascii_hexdigit())
+                }))
+}
+
+/// Remove a placed signature and its box, or clear a reusable form field.
+/// Earlier revisions and the validity of other signatures are preserved.
 pub fn remove_signature(bytes: &[u8], field: &str) -> Result<Vec<u8>> {
     let doc = Document::load_mem(bytes)?;
     ensure!(!doc.is_encrypted(), "Encrypted PDFs cannot be edited");
@@ -286,80 +339,63 @@ pub fn remove_signature(bytes: &[u8], field: &str) -> Result<Vec<u8>> {
         .find(|(id, _, _)| *id == field_id)
         .map(|(_, _, w)| w)
         .unwrap_or_default();
-    let mut update = IncrementalDocument::create_from(bytes.to_vec(), doc.clone());
-    let mut next_id = doc.max_id;
-    let mut field_dict = doc.get_dictionary(field_id)?.clone();
-    field_dict.remove(b"V");
-    field_dict.remove(b"Lock");
-    update.new_document.set_object(field_id, field_dict);
-    // An empty appearance hides the old signature graphic.
-    for widget in widgets {
-        let mut dict = update
-            .new_document
-            .get_dictionary(widget)
-            .cloned()
-            .or_else(|_| doc.get_dictionary(widget).cloned())?;
-        let size = dict
-            .get(b"Rect")
-            .and_then(Object::as_array)
-            .ok()
-            .map(|r| {
-                r.iter()
-                    .filter_map(|v| v.as_float().ok())
-                    .collect::<Vec<_>>()
-            })
-            .filter(|r| r.len() == 4)
-            .map(|r| ((r[2] - r[0]).abs(), (r[3] - r[1]).abs()))
-            .unwrap_or((0., 0.));
-        next_id += 1;
-        let appearance = (next_id, 0);
-        update.new_document.set_object(
-            appearance,
-            Stream::new(
+    let mut next = doc.clone();
+    if placed_widget(doc.get_dictionary(field_id)?, field_id, sig_id) {
+        crate::form_design::detach_field(&mut next, field_id, &widgets)?;
+        next.set_object(field_id, Object::Null);
+    } else {
+        let field_dict = next.get_dictionary_mut(field_id)?;
+        field_dict.remove(b"V");
+        field_dict.remove(b"Lock");
+        // An empty appearance hides the old graphic while keeping the field usable.
+        for widget in widgets {
+            let size = next
+                .get_dictionary(widget)?
+                .get(b"Rect")
+                .and_then(Object::as_array)
+                .ok()
+                .map(|r| {
+                    r.iter()
+                        .filter_map(|v| v.as_float().ok())
+                        .collect::<Vec<_>>()
+                })
+                .filter(|r| r.len() == 4)
+                .map(|r| ((r[2] - r[0]).abs(), (r[3] - r[1]).abs()))
+                .unwrap_or((0., 0.));
+            let appearance = next.add_object(Stream::new(
                 dictionary! {
                     "Type" => "XObject",
                     "Subtype" => "Form",
                     "BBox" => vec![0.into(), 0.into(), size.0.into(), size.1.into()],
                 },
                 vec![],
-            ),
-        );
-        dict.set("AP", dictionary! { "N" => appearance });
-        update.new_document.set_object(widget, dict);
+            ));
+            next.get_dictionary_mut(widget)?
+                .set("AP", dictionary! { "N" => appearance });
+        }
     }
     // A certification that pointed at this signature no longer applies.
-    let root = doc.trailer.get(b"Root")?.as_reference()?;
-    let mut catalog = doc.get_dictionary(root)?.clone();
-    let certifies = catalog
+    let certifies = doc
+        .catalog()?
         .get(b"Perms")
         .and_then(|p| doc.dereference(p))
         .and_then(|(_, p)| p.as_dict())
         .and_then(|p| p.get(b"DocMDP"))
         .and_then(Object::as_reference)
         .is_ok_and(|r| r == sig_id);
+    let mut removed = removal_records(&next).to_vec();
+    removed.push(Object::Reference(sig_id));
+    let catalog = next.catalog_mut()?;
     if certifies {
         catalog.remove(b"Perms");
-        update.new_document.set_object(root, catalog);
     }
-    update.new_document.set_object(sig_id, Object::Null);
-    update.new_document.max_id = next_id;
-    let mut output = vec![];
-    update.save_to(&mut output)?;
-    ensure!(output.starts_with(bytes), "The signed bytes changed");
-    let remaining: HashSet<String> = crate::signing::verify(bytes, None)?
-        .into_iter()
-        .filter(|s| s.field != field && s.crypto_valid && s.digest_matches)
-        .map(|s| s.field)
-        .collect();
-    let after: HashSet<String> = crate::signing::verify(&output, None)?
-        .into_iter()
-        .filter(|s| s.crypto_valid && s.digest_matches)
-        .map(|s| s.field)
-        .collect();
+    catalog.set(REMOVED_SIGNATURES, removed);
+    next.set_object(sig_id, Object::Null);
     ensure!(
-        remaining.is_subset(&after),
-        "Removing this signature would invalidate another one"
+        signature_widgets(&next)
+            .iter()
+            .all(|(_, f, _)| !f.has(b"V") || field_name(f) != field),
+        "The signature is still present"
     );
-    ensure!(!after.contains(field), "The signature is still present");
-    Ok(output)
+    append_changes(bytes, &doc, &next)
 }

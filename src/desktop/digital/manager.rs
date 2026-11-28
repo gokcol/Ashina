@@ -1323,6 +1323,17 @@ impl DigitalState {
                 {
                     signature.show_name = true;
                 }
+                ui.horizontal_wrapped(|ui| {
+                    if self.default_signature.as_ref() == Some(&id) {
+                        let (r, _) = ui.allocate_exact_size(vec2(16., 16.), egui::Sense::hover());
+                        ui::draw_icon(ui.painter(), r, Icon::Star, theme::warning());
+                        ui.label(RichText::new("Used by Quick Sign").color(theme::ink()));
+                    } else {
+                        make_default = ui
+                            .add(ActionButton::new(Icon::Star, "Use for Quick Sign"))
+                            .clicked();
+                    }
+                });
                 egui::CollapsingHeader::new("Saved signature details")
                     .default_open(!compact)
                     .show(ui, |ui| {
@@ -1349,22 +1360,6 @@ impl DigitalState {
                             });
                         });
                         ui.separator();
-                        ui.horizontal_wrapped(|ui| {
-                            if self.default_signature.as_ref() == Some(&id) {
-                                let (r, _) =
-                                    ui.allocate_exact_size(vec2(16., 16.), egui::Sense::hover());
-                                ui::draw_icon(ui.painter(), r, Icon::Star, theme::warning());
-                                ui.label(RichText::new("Used by Quick Sign").color(theme::ink()));
-                            } else {
-                                make_default = ui
-                                    .add(ActionButton::new(Icon::Star, "Use for Quick Sign"))
-                                    .on_hover_text(
-                                        "Quick Sign signs with this signature in one step",
-                                    )
-                                    .clicked();
-                            }
-                        });
-
                         self.signs_with(ui, &mut signature, action);
                     });
                 ui::field(ui, "Show on the signature", |ui| {

@@ -604,6 +604,8 @@ impl PdfSigner {
                 existing
             }
             None => {
+                // Ashina can remove a widget it placed while keeping authored form fields reusable.
+                sig_field_dict.set("AshinaPlacedSignature", Object::Boolean(true));
                 let id = doc.add_object(Object::Dictionary(sig_field_dict));
                 // Step 6: Update AcroForm and page annotations
                 acroform::ensure_acroform(&mut doc, id, self.options.page)?;

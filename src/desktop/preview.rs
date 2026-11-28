@@ -156,6 +156,9 @@ fn settings_styles_preview() {
             preview.save(&ctx, output, &root.join(format!("{name}-home.png")));
         }
         app.digital.open = true;
+        if name == "touch-settings" {
+            touch_tools::preview(&ctx);
+        }
         app.digital.panel = match name {
             "touch-settings" => digital::Panel::Touch,
             "ink-settings" => digital::Panel::Ink,
