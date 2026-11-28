@@ -1,3 +1,3 @@
-Ashina 3.1.8
+Ashina 3.1.9
 
-Choose Clean Split, Name Fields, Compact or Ink for digital signatures. Preview the selected template on the PDF in English, Turkish or German, and use your handwritten signature, a picture or a logo as artwork.
+Removing a digital signature now cleans up the box Ashina created for it and keeps existing signature fields available for reuse. Touch settings appear automatically on touchscreen PCs. The Quick Sign default is easier to find under the signature template and language.

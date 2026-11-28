@@ -2,6 +2,14 @@
   "unreleased": [],
   "releases": [
     {
+      "version": "3.1.9",
+      "changes": [
+        "Removing a digital signature also removes the box Ashina created for it. An existing signature field stays available to sign again.",
+        "Automatic input mode shows Touch settings when a touchscreen is detected. You can also choose an input mode in Settings → Appearance.",
+        "Choose your Quick Sign default directly below the signature template and language in Settings → Signatures → Digital signatures."
+      ]
+    },
+    {
       "version": "3.1.8",
       "changes": [
         "Choose a digital signature template: Clean Split, Name Fields, Compact or Ink.",

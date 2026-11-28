@@ -2,9 +2,9 @@
 
 # Ashina — native Rust desktop PDF editor
 
-**Ashina** is a native PDF reader and editor for macOS and Windows. Version **3.1.8**, Mac build **251**, adds four digital signature templates, localized signing details in English, Turkish and German, and a live preview on the page. If in-app update checks fail on Ashina 3.1.5 or earlier, download the current release once from GitHub.
+**Ashina** is a native PDF reader and editor for macOS and Windows. Version **3.1.9**, Mac build **253**, removes leftover boxes when deleting digital signatures and shows Touch settings when a touchscreen is detected. Choose the Quick Sign default directly below the signature template and language. If in-app update checks fail on Ashina 3.1.5 or earlier, download the current release once from GitHub.
 
-[Ashina 3.1.8 downloads](https://github.com/gokcol/Ashina/releases/tag/v3.1.8) · [Feature guide](FEATURES.md)
+[Ashina 3.1.9 downloads](https://github.com/gokcol/Ashina/releases/tag/v3.1.9) · [Feature guide](FEATURES.md)
 
 Version **3.1.1**, Mac build **244**, is [available for macOS and Windows](https://github.com/gokcol/Ashina/releases/tag/v3.1.1). It adds threaded review comments, voice notes, revision tools, sharing cleanup and smoother editing, with fixes that keep the note inspector open and position popovers beside their markers. See the [complete feature guide](FEATURES.md) for workflows, platform support and compatibility limits; the guide is also attached to the release. The 3.1 line now enters a feature freeze focused on reliability and performance.
 
@@ -52,10 +52,10 @@ Choose **File → Document Properties…** on Mac or Windows (also available thr
 
 ## Choose a Windows download
 
-The [GitHub release](https://github.com/gokcol/Ashina/releases/tag/v3.1.8) includes two Windows architectures:
+The [GitHub release](https://github.com/gokcol/Ashina/releases/tag/v3.1.9) includes two Windows architectures:
 
-- **ARM64:** `Ashina-3.1.8-Setup-arm64.exe` or `Ashina-3.1.8-windows-arm64.zip`, for Windows on ARM and Parallels on Apple Silicon.
-- **x64:** `Ashina-3.1.8-Setup.exe` or `Ashina-3.1.8-windows-x64.zip`, for Intel/AMD PCs.
+- **ARM64:** `Ashina-3.1.9-Setup-arm64.exe` or `Ashina-3.1.9-windows-arm64.zip`, for Windows on ARM and Parallels on Apple Silicon.
+- **x64:** `Ashina-3.1.9-Setup.exe` or `Ashina-3.1.9-windows-x64.zip`, for Intel/AMD PCs.
 
 Both include native offline OCR and translation runtimes. The ARM64 app avoids x64 CPU emulation, but its DirectX 12 renderer still depends on compatible graphics support; Parallels performance needs separate measurement. Microsoft Store packaging currently remains x64. See [Windows ARM64 build and validation](docs/windows-arm64.md).
 
