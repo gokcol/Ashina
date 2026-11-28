@@ -270,7 +270,6 @@ enum Event {
     Signed {
         path: PathBuf,
         tab: u64,
-        revision: u64,
     },
     /// A digital ID created in the system store, for a signature.
     Stored {
@@ -1159,16 +1158,12 @@ impl Viewer {
                     self.digital.report = Some((tab, revision, report, explicit_trust));
                     self.digital.panel = Panel::Validate;
                 }
-                Event::Signed {
-                    path,
-                    tab,
-                    revision,
-                } => {
-                    if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab)
-                        && let Some(s) = &mut tab.session
-                    {
-                        s.mark_saved(revision);
-                    }
+                Event::Signed { path, tab } => {
+                    // Only the signed copy was written. The source keeps its save
+                    // state and recovery copy until the user saves it explicitly.
+                    let source_dirty = self.tabs.iter().find(|t| t.id == tab).is_some_and(|t| {
+                        t.unsaved_on_load || t.session.as_ref().is_some_and(|s| s.dirty())
+                    });
                     let previous_id = self.next_id;
                     self.open(path.clone(), ctx);
                     if self.next_id != previous_id {
@@ -1188,13 +1183,18 @@ impl Viewer {
                     self.digital.report = None;
                     self.digital.panel = Panel::Validate;
                     self.digital.message = format!(
-                        "Signed copy saved to {} and independently reopened by the viewer. Earlier signed bytes were preserved.",
+                        "Verified signed copy saved to {}. Earlier signed bytes were preserved.",
                         path.display()
                     );
                     self.status = Some((
                         format!(
-                            "Signed and saved as {} • your original is unchanged",
-                            path.file_name().unwrap_or_default().to_string_lossy()
+                            "Signed copy saved as {} • {}",
+                            path.file_name().unwrap_or_default().to_string_lossy(),
+                            if source_dirty {
+                                "the original tab still has unsaved edits"
+                            } else {
+                                "the original is unchanged"
+                            }
                         ),
                         false,
                     ));
@@ -2416,7 +2416,7 @@ impl Viewer {
     /// Sign the active document with the selected identity and write `path`,
     /// which must not exist yet.
     fn sign_to(&mut self, path: PathBuf, ctx: &egui::Context) {
-        if !self.apply_pending_annotation() {
+        if !self.signing_source_ready() || !self.apply_pending_annotation() {
             return;
         }
         let Some(tab) = self.tabs.get(self.active) else {
@@ -2479,12 +2479,29 @@ impl Viewer {
             }
             let signed = sign_using(entry, &password, &input, &request)?;
             write_new(&path, &signed)?;
-            Ok(Event::Signed {
-                path,
-                tab: tab_id,
-                revision,
-            })
+            Ok(Event::Signed { path, tab: tab_id })
         });
+    }
+    fn signing_source_ready(&mut self) -> bool {
+        if self.saving || self.content.busy || self.organizer.busy {
+            let message = "Wait for the current document operation before signing.";
+            self.status = Some((message.into(), false));
+            self.digital.error = Some(message.into());
+            return false;
+        }
+        let tab = self.tabs.get(self.active).map(|tab| tab.id);
+        if let Some(tab) = tab.filter(|id| self.pending_form_edits(*id)) {
+            self.focus_pending_form_edits(tab);
+            let message = "Apply the pending form changes before signing.";
+            self.status = Some((message.into(), false));
+            self.digital.error = Some(message.into());
+            return false;
+        }
+        if self.unfinished_edit(tab) {
+            self.digital.error = self.status.as_ref().map(|(message, _)| message.clone());
+            return false;
+        }
+        true
     }
     /// Quick Sign: check the default ID and document, then wait for a box on the page.
     /// Why the active document cannot be signed here, if it cannot.
@@ -2964,6 +2981,9 @@ impl Viewer {
                 ));
             }
             Action::Sign => {
+                if !self.signing_source_ready() {
+                    return;
+                }
                 let Some(tab) = self.tabs.get(self.active) else {
                     return;
                 };
@@ -3996,6 +4016,17 @@ mod tests {
                 }
             };
             until(&mut app, &|a| a.tabs[0].capabilities.is_some());
+            let original_path = temp.path().join("Contract.pdf");
+            let original_bytes = std::fs::read(&original_path).unwrap();
+            let mark = mypdf_milestone0::annotations::Annotation::new(
+                1,
+                [20., 20., 80., 70.],
+                mypdf_milestone0::annotations::Kind::Rectangle,
+                Default::default(),
+            );
+            let mut marks = app.tabs[0].session.as_ref().unwrap().annotations.clone();
+            marks.push(mark.clone());
+            app.tabs[0].session.as_mut().unwrap().commit(marks).unwrap();
 
             // Without a default ID, Quick Sign explains what it needs instead of guessing.
             app.quick_sign();
@@ -4097,6 +4128,11 @@ mod tests {
             app.digital.sign_password = Zeroizing::new(passphrase.into());
             app.digital.quick_prompt = false;
             app.digital.open = true;
+            app.content.busy = true;
+            app.quick_sign_now(&ctx);
+            assert!(!app.digital.busy);
+            assert!(app.digital.error.as_deref().unwrap().contains("Wait"));
+            app.content.busy = false;
             app.quick_sign_now(&ctx);
             until(&mut app, &|a| a.tabs.len() == 2 && !a.digital.busy);
             assert!(!app.digital.open && !app.digital.quick_prompt && !app.digital.quick);
@@ -4135,6 +4171,13 @@ mod tests {
 
             // The signature's note is the reason, unless one was typed for this signing.
             let doc = lopdf::Document::load_mem(&std::fs::read(&signed).unwrap()).unwrap();
+            assert!(
+                mypdf_milestone0::annotations::load(&doc)
+                    .iter()
+                    .any(|a| a.id == mark.id)
+            );
+            assert_eq!(std::fs::read(original_path).unwrap(), original_bytes);
+            assert!(app.tabs[0].session.as_ref().unwrap().dirty());
             let reasons: Vec<String> = doc
                 .objects
                 .values()

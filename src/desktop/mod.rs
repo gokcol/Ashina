@@ -136,7 +136,8 @@ struct Tab {
     scale: f32,
     jump: Option<(usize, Option<f32>)>,
     document_view: Option<(Rect, egui::Vec2, f32)>,
-    document_layout: Option<reading::Layout>,
+    document_layout: Option<Arc<reading::Layout>>,
+    document_layout_key: Option<reading::LayoutKey>,
     last_pinch: Option<std::time::Instant>,
     page_layout: reading::PageLayout,
     view_preferences: mypdf_milestone0::home::ReadingState,
@@ -496,6 +497,7 @@ impl Viewer {
             thumbnail_page: None,
             document_view: None,
             document_layout: None,
+            document_layout_key: None,
             last_pinch: None,
             page_layout: reading::PageLayout::from_code(view_preferences.layout),
             restore_view,
@@ -650,59 +652,68 @@ impl Viewer {
             path
         };
         self.save_intent = save::Intent::Automatic;
-        // Replacing the current path always checks against the opened/last-saved
-        // version. Save As may replace another file after the OS confirms it.
-        let same_file = destination
-            .canonicalize()
-            .unwrap_or_else(|_| destination.clone())
-            == current_path;
-        let expected = if same_file && baseline.is_some() {
-            Ok(baseline)
-        } else {
-            mypdf_milestone0::file_save::existing(&destination)
-        };
-        let expected = match expected {
-            Ok(value) => value,
-            Err(e) => {
-                self.status = Some((format!("Could not save: {e:#}"), true));
-                self.close_after_save = None;
-                self.cancel_tab_closes();
-                return;
-            }
-        };
         self.saving = true;
-        self.status = Some(("Saving PDF…".into(), false));
+        self.status = Some((
+            format!(
+                "Saving {}…",
+                destination
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+            ),
+            false,
+        ));
         let tx = self.save_tx.clone();
         let wake = ctx.clone();
         std::thread::spawn(move || {
-            let result = (|| -> anyhow::Result<_> {
-                let bytes = if revision == 0 {
-                    bytes.to_vec()
-                } else {
-                    mypdf_milestone0::annotations::export(&bytes, &annotations)?
-                };
-                // Signed bytes stay untouched: edits are appended as a new revision.
-                let bytes = match signed_original {
-                    Some(original) => {
-                        mypdf_milestone0::signature_edit::incremental_update(&original, &bytes)?
-                    }
-                    None => bytes,
-                };
-                // Saving a protected document keeps its password.
-                let bytes = match &password {
-                    Some(password) => mypdf_milestone0::security::protect(&bytes, password)?,
-                    None => bytes,
-                };
-                let fingerprint =
-                    mypdf_milestone0::file_save::write(&destination, &bytes, expected)?;
-                Ok(save::Completed {
-                    path: destination,
-                    id: tab_id,
-                    revision,
-                    fingerprint,
+            let result =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> anyhow::Result<_> {
+                    // Save As can target another file which the native picker has
+                    // confirmed for replacement. Snapshot it before export.
+                    let expected = if baseline.is_some()
+                        && (destination == current_path
+                            || destination
+                                .canonicalize()
+                                .is_ok_and(|path| path == current_path))
+                    {
+                        baseline
+                    } else {
+                        mypdf_milestone0::file_save::existing(&destination)?
+                    };
+                    let bytes = if revision == 0 {
+                        bytes.to_vec()
+                    } else {
+                        mypdf_milestone0::annotations::export(&bytes, &annotations)?
+                    };
+                    // Signed bytes stay untouched: edits are appended as a new revision.
+                    let bytes = match signed_original {
+                        Some(original) => {
+                            mypdf_milestone0::signature_edit::incremental_update(&original, &bytes)?
+                        }
+                        None => bytes,
+                    };
+                    // Saving a protected document keeps its password.
+                    let bytes = match &password {
+                        Some(password) => mypdf_milestone0::security::protect(&bytes, password)?,
+                        None => bytes,
+                    };
+                    let fingerprint =
+                        mypdf_milestone0::file_save::write(&destination, &bytes, expected)?;
+                    Ok(save::Completed {
+                        path: destination,
+                        id: tab_id,
+                        revision,
+                        fingerprint,
+                    })
+                }))
+                .map_err(|_| {
+                    "Could not finish saving this PDF. Your edits are still open.".to_owned()
                 })
-            })()
-            .map_err(|e| format!("Could not save: {e:#}. Existing files are preserved."));
+                .and_then(|result| {
+                    result.map_err(|e| {
+                        format!("Could not save: {e:#}. Existing files are preserved.")
+                    })
+                });
             let _ = tx.send(result);
             wake.request_repaint();
         });
@@ -1056,7 +1067,10 @@ impl Viewer {
             self.status = Some(status);
         }
         for tab in &mut self.tabs {
-            for event in tab.worker.events.try_iter().take(16).collect::<Vec<_>>() {
+            for _ in 0..16 {
+                let Ok(event) = tab.worker.events.try_recv() else {
+                    break;
+                };
                 match event {
                     Event::Loaded {
                         bytes,
@@ -1075,6 +1089,9 @@ impl Viewer {
                         }
                         let continuing_view =
                             tab.document_layout.is_some() && tab.pages.len() == pages.len();
+                        if tab.pages != pages {
+                            tab.document_layout_key = None;
+                        }
                         tab.text.resize_with(pages.len(), || None);
                         tab.pages = pages;
                         if tab.session.is_none() {
@@ -1128,13 +1145,12 @@ impl Viewer {
                         tab.index_done = true;
                         tab.search_limited = limited;
                     }
-                    Event::Raster { key, size, rgba } => {
+                    Event::Raster { key, image } => {
                         tab.pending.remove(&key);
                         if !key.thumbnail {
                             tab.stale.remove(&key.page);
                         }
-                        let bytes = rgba.len();
-                        let image = egui::ColorImage::from_rgba_premultiplied(size, &rgba);
+                        let bytes = image.pixels.len() * std::mem::size_of::<Color32>();
                         let texture = ctx.load_texture(
                             format!("{}-{}-{}-{}", tab.id, key.page, key.scale, key.thumbnail),
                             image,
@@ -1148,6 +1164,12 @@ impl Viewer {
                                 used: self.tick,
                             },
                         );
+                        if !key.thumbnail {
+                            // Large texture uploads can stall presentation. Spread
+                            // each tab's queued full-page uploads over frames.
+                            ctx.request_repaint();
+                            break;
+                        }
                     }
                     Event::RasterFailed { key, error } => {
                         tab.pending.remove(&key);
@@ -1182,11 +1204,26 @@ impl Viewer {
             self.status = Some(match saved {
                 Ok(saved) => {
                     let path = saved.path.clone();
+                    let preserves_signed_revisions = self
+                        .tabs
+                        .iter()
+                        .any(|tab| tab.id == saved.id && tab.signed_original.is_some());
                     self.finish_save(saved);
                     if let Some(intent) = self.close_after_save.take() {
                         self.request_close(intent, ctx);
                     }
-                    (format!("Saved {}", path.display()), false)
+                    (
+                        format!(
+                            "Saved {}{}",
+                            path.display(),
+                            if preserves_signed_revisions {
+                                " • earlier signed revisions preserved"
+                            } else {
+                                ""
+                            }
+                        ),
+                        false,
+                    )
                 }
                 Err(e) => {
                     self.close_after_save = None;
@@ -2201,7 +2238,7 @@ impl Viewer {
                 // Reserve only the scrollbar's actual layout width. The old
                 // canvas was wider than the viewport even in Fit Width.
                 let available = ui.available_size() - vec2(ui.spacing().scroll.allocated_width(), 0.);
-                let mut layout = reading::Layout::arrange(&tab.pages, tab.zoom, available, tab.page_layout, tab.page);
+                let (mut layout_key, mut layout) = tab.layout_for(available);
                 let touch = touch_navigation::update(
                     ctx, tab.id, self.editor.mode,
                     tab.document_view.map_or(ui.available_rect_before_wrap(), |(view, _, _)| view), ui.layer_id(), tab.jump.is_some(),
@@ -2223,7 +2260,7 @@ impl Viewer {
                     let pointer = pointer - view.min - touch.delta;
                     let next = (old.scale * delta).clamp(0.1, 6.);
                     tab.zoom = Zoom::Scale(next);
-                    layout = reading::Layout::arrange(&tab.pages, tab.zoom, available, tab.page_layout, tab.page);
+                    (layout_key, layout) = tab.layout_for(available);
                     anchor_offset = Some(old.anchored_offset(&layout, offset, pointer));
                     tab.last_pinch=Some(std::time::Instant::now());
                     tab.jump = None;
@@ -2233,7 +2270,8 @@ impl Viewer {
                 if anchor_offset.is_none() && tab.jump.is_none()
                     && let Some((view, offset, _)) = tab.document_view
                     && let Some(old) = &tab.document_layout
-                    && old.rects.len() == layout.rects.len() && (*old != layout || tab.restore_scroll)
+                    && old.rects.len() == layout.rects.len()
+                    && ((!Arc::ptr_eq(old, &layout) && *old != layout) || tab.restore_scroll)
                 {
                     let mut next = old.anchored_offset(&layout, offset, vec2(view.width() / 2., 0.));
                     next.x = (next.x + (view.width() - available.x) / 2.).max(0.);
@@ -2451,6 +2489,7 @@ impl Viewer {
                 tab.document_view = Some((output.inner_rect, output.state.offset, max_width));
                 tab.scale = layout.scale;
                 tab.document_layout = Some(layout);
+                tab.document_layout_key = Some(layout_key);
                 match follow {
                     Some(navigation::Target::Page(page)) => tab.jump(page),
                     Some(navigation::Target::Uri(uri)) => self.link_confirm = Some(uri),

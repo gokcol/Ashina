@@ -562,11 +562,11 @@ mod tests {
                     egui::Vec2::ZERO,
                     500.,
                 ));
-                app.tabs[0].document_layout = Some(reading::Layout {
+                app.tabs[0].document_layout = Some(Arc::new(reading::Layout {
                     rects: vec![Rect::from_min_size(pos2(0., 0.), vec2(500., 500.))],
                     scale: 1.,
                     size: vec2(500., 500.),
-                });
+                }));
                 app.note_reader_requests(ctx);
                 if app.inspector && !app.translation.open && !app.signature_panel_open() {
                     app.annotation_inspector(ctx);

@@ -230,6 +230,7 @@ impl Tab {
         self.view_preferences = source.view_preferences.clone();
         self.document_view = source.document_view;
         self.document_layout = source.document_layout.clone();
+        self.document_layout_key = source.document_layout_key;
         self.restore_view = false;
         self.restore_scroll = source.document_view.is_some();
         self.jump = source.jump;

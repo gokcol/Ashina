@@ -33,6 +33,44 @@ pub(super) struct Layout {
     pub scale: f32,
     pub size: egui::Vec2,
 }
+#[derive(Clone, Copy, PartialEq)]
+pub(super) struct LayoutKey {
+    viewport: egui::Vec2,
+    zoom: Zoom,
+    mode: PageLayout,
+    single_page: usize,
+}
+
+impl Tab {
+    pub(super) fn layout_for(&self, viewport: egui::Vec2) -> (LayoutKey, Arc<Layout>) {
+        let key = LayoutKey {
+            viewport,
+            zoom: self.zoom,
+            mode: self.page_layout,
+            single_page: if self.page_layout == PageLayout::Single {
+                self.page
+            } else {
+                0
+            },
+        };
+        if self.document_layout_key == Some(key)
+            && let Some(layout) = &self.document_layout
+        {
+            return (key, layout.clone());
+        }
+        (
+            key,
+            Arc::new(Layout::arrange(
+                &self.pages,
+                key.zoom,
+                key.viewport,
+                key.mode,
+                key.single_page,
+            )),
+        )
+    }
+}
+
 impl Layout {
     #[cfg(test)]
     pub fn new(pages: &[PageSize], zoom: Zoom, viewport: egui::Vec2) -> Self {
@@ -58,39 +96,34 @@ impl Layout {
             }
             .clamp(0.1, 6.)
         });
-        let rows: Vec<Vec<usize>> = match mode {
-            PageLayout::Continuous => (0..pages.len()).map(|p| vec![p]).collect(),
-            PageLayout::Single => {
-                if pages.is_empty() {
-                    vec![]
-                } else {
-                    vec![vec![current.min(pages.len() - 1)]]
-                }
-            }
-            PageLayout::Facing => (0..pages.len())
-                .step_by(2)
-                .map(|p| (p..(p + 2).min(pages.len())).collect())
-                .collect(),
+        let (start, end) = if mode == PageLayout::Single && !pages.is_empty() {
+            let page = current.min(pages.len() - 1);
+            (page, page + 1)
+        } else {
+            (0, pages.len())
         };
-        let row_width = |row: &[usize]| {
-            row.iter().map(|&p| pages[p].width * scale).sum::<f32>()
+        let row_len = if mode == PageLayout::Facing { 2 } else { 1 };
+        let rows = pages[start..end].chunks(row_len);
+        let row_width = |row: &[PageSize]| {
+            row.iter().map(|page| page.width * scale).sum::<f32>()
                 + GAP * row.len().saturating_sub(1) as f32
         };
         let width = rows
-            .iter()
+            .clone()
             .map(|r| row_width(r) + 2. * GUTTER)
             .fold(viewport.x, f32::max);
         let mut top = GAP;
         let mut rects = vec![Rect::NOTHING; pages.len()];
-        for row in rows {
-            let mut left = (width - row_width(&row)) / 2.;
+        for (row_index, row) in rows.enumerate() {
+            let mut left = (width - row_width(row)) / 2.;
             let height = row
                 .iter()
-                .map(|&p| pages[p].height * scale)
+                .map(|page| page.height * scale)
                 .fold(0., f32::max);
-            for p in row {
-                let size = vec2(pages[p].width, pages[p].height) * scale;
-                rects[p] = Rect::from_min_size(pos2(left, top), size);
+            for (index, page) in row.iter().enumerate() {
+                let size = vec2(page.width, page.height) * scale;
+                rects[start + row_index * row_len + index] =
+                    Rect::from_min_size(pos2(left, top), size);
                 left += size.x + GAP;
             }
             top += height + GAP;

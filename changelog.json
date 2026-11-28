@@ -2,6 +2,14 @@
   "unreleased": [],
   "releases": [
     {
+      "version": "3.1.10",
+      "changes": [
+        "Ashina reuses page layout while you edit and prepares page images in the background, reducing work on the interface thread.",
+        "Saving checks existing files in the background with less memory, and reports which PDF is being written.",
+        "Signing a copy keeps unsaved changes and recovery data in the original tab. Finish active edits before signing so they are included."
+      ]
+    },
+    {
       "version": "3.1.9",
       "changes": [
         "Removing a digital signature also removes the box Ashina created for it. An existing signature field stays available to sign again.",

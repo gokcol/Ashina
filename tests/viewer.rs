@@ -125,10 +125,10 @@ fn worker_loads_indexes_and_renders_without_a_window() {
                 assert!(!text.find("invoice", 0).is_empty());
                 indexed += 1;
             }
-            Event::Raster { size, rgba, key } => {
+            Event::Raster { image, key } => {
                 assert_eq!(key.page, 1);
-                assert_eq!(rgba.len(), size[0] * size[1] * 4);
-                assert!(rgba.chunks_exact(4).all(|p| p[3] == 255));
+                assert_eq!(image.pixels.len(), image.size[0] * image.size[1]);
+                assert!(image.pixels.iter().all(|p| p.a() == 255));
                 raster = true;
             }
             Event::Failed(e) | Event::RasterFailed { error: e, .. } => panic!("{e}"),

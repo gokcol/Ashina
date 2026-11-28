@@ -177,8 +177,12 @@ fn assert_worker_raster(bytes: Arc<[u8]>, reference: &[u8], scales: &[f32]) {
                 assert_eq!(annotations.len(), expected_annotations);
                 assert!(worker.request(viewer::raster_key(0, pages[0], scales[0], false)));
             }
-            Event::Raster { key, size, rgba } => {
-                assert_eq!((size, rgba), raw_render(reference, key.factor()));
+            Event::Raster { key, image } => {
+                let (size, rgba) = raw_render(reference, key.factor());
+                assert_eq!(
+                    image,
+                    epaint::ColorImage::from_rgba_premultiplied(size, &rgba)
+                );
                 next += 1;
                 if next == scales.len() {
                     break;

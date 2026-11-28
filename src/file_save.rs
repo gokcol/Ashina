@@ -1,7 +1,10 @@
 //! Atomic document saves, with a baseline to detect external changes.
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use sha2::{Digest, Sha256};
-use std::{io::Write, path::Path};
+use std::{
+    io::{Read, Write},
+    path::Path,
+};
 
 pub type Fingerprint = [u8; 32];
 
@@ -16,8 +19,16 @@ pub fn existing(path: &Path) -> Result<Option<Fingerprint>> {
             if !meta.is_file() || meta.file_type().is_symlink() {
                 bail!("Choose a regular PDF file, not a folder or symbolic link");
             }
-            let bytes = crate::convert::read_bounded(path, crate::viewer::MAX_FILE_BYTES)?;
-            Ok(Some(fingerprint(&bytes)))
+            let limit = crate::viewer::MAX_FILE_BYTES;
+            let mut file = std::fs::File::open(path)?.take(limit + 1);
+            let mut digest = Sha256::new();
+            let bytes_read = std::io::copy(&mut file, &mut digest)?;
+            ensure!(
+                bytes_read <= limit,
+                "Input exceeds {} MB",
+                limit / 1024 / 1024
+            );
+            Ok(Some(digest.finalize().into()))
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e.into()),

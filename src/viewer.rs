@@ -21,7 +21,7 @@ pub const MAX_RASTER_PIXELS: f32 = 12_000_000.0;
 const MAX_INDEX_BYTES: usize = 64 * 1024 * 1024;
 const MAX_PAGE_GLYPHS: usize = 100_000;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PageSize {
     pub width: f32,
     pub height: f32,
@@ -736,8 +736,7 @@ pub enum Event {
     },
     Raster {
         key: RasterKey,
-        size: [usize; 2],
-        rgba: Vec<u8>,
+        image: epaint::ColorImage,
     },
     RasterFailed {
         key: RasterKey,
@@ -944,8 +943,10 @@ fn run_worker(
             );
             send(Event::Raster {
                 key,
-                size: [raster.width() as usize, raster.height() as usize],
-                rgba: raster.data_as_u8_slice().to_vec(),
+                image: epaint::ColorImage::from_rgba_premultiplied(
+                    [raster.width() as usize, raster.height() as usize],
+                    raster.data_as_u8_slice(),
+                ),
             });
         } else if !index_finished {
             let text = extract_page(&pdf.pages()[indexed], &text_cache);
