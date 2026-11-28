@@ -10,7 +10,7 @@ Version **3.1.1**, Mac build **244**, is [available for macOS and Windows](https
 
 Version **3.1.0**, Mac build **235**, adds reliable annotation manipulation, font controls for annotation text, and a visual stamp designer with border templates, colors and transparency. It includes configurable touch controls, customizable Home, polished Settings and About, A4 page sizing, image fitting, OCR, table editing, metadata and saving improvements. [Downloads and full release notes](https://github.com/gokcol/Ashina/releases/tag/v3.1.0).
 
-[Ashina on Microsoft Store](https://apps.microsoft.com/detail/9MXR0WLW42XT) currently offers **3.1.8.0 (Windows x64)**. Update **3.1.9.0** was submitted on November 28, 2026, as submission 12 and is set to publish automatically after certification.
+[Ashina on Microsoft Store](https://apps.microsoft.com/detail/9MXR0WLW42XT) currently offers **3.1.9.0 (Windows x64)**. Update **3.1.10.0** was submitted on November 28, 2026, as submission 13 and is set to publish automatically after certification.
 
 Version **2.4.2**, Mac build **212**, fixes Save and autosave rejecting text boxes that look correct on screen. PDF annotation text now uses the editor’s layout engine and preserves visible overflow without shrinking text. Includes the file insertion and image editing improvements from 2.4.1. [Downloads](https://github.com/gokcol/Ashina/releases/tag/v2.4.2).
 
